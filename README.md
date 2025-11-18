@@ -2,6 +2,8 @@
 
 TiDB Desktop is a modern lightweight TiDB/MySQL client with a built-in AI agent.
 
+![screenshot](./screenshot.gif)
+
 ## Download
 
 You can download the latest release from the [GitHub Releases page](https://github.com/zoubingwu/tidb-desktop/releases).
