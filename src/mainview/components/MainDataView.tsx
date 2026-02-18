@@ -70,11 +70,8 @@ const defaultTableState: TableState = {
   serverFilters: [],
 };
 
-const TITLE_BAR_HEIGHT = 0;
-const FOOTER_HEIGHT = 40;
 const DEFAULT_DB_TREE_WIDTH = 240;
 const DEFAULT_AI_PANEL_WIDTH = 300;
-const TABLE_HEIGHT = window.innerHeight - TITLE_BAR_HEIGHT - FOOTER_HEIGHT;
 
 const LAYOUT_DB_TREE_WIDTH_KEY = "layout:dbTreeWidth";
 const LAYOUT_AI_PANEL_WIDTH_KEY = "layout:aiPanelWidth";
@@ -526,9 +523,9 @@ const MainDataView = ({
               }
             }}
           >
-            <ReactSplitView.Pane minSize={200}>
+            <ReactSplitView.Pane minSize={200} className="min-h-0">
               {tableViewState === "data" ? (
-                <DataTable<TableRowData> table={table} height={TABLE_HEIGHT} />
+                <DataTable<TableRowData> table={table} />
               ) : (
                 <TablePlaceholder animate={tableViewState === "loading"} />
               )}

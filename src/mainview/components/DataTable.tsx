@@ -11,10 +11,9 @@ import {
 
 interface DataTableProps<TData> {
   table: ReactTable<TData>;
-  height: number;
 }
 
-function DataTable<TData>({ table, height }: DataTableProps<TData>) {
+function DataTable<TData>({ table }: DataTableProps<TData>) {
   const parentRef = useRef<HTMLDivElement>(null);
   const { rows } = table.getRowModel();
 
@@ -28,8 +27,7 @@ function DataTable<TData>({ table, height }: DataTableProps<TData>) {
   return (
     <div
       ref={parentRef}
-      className="data-table-scroll overflow-auto tabular-nums"
-      style={{ height }}
+      className="data-table-scroll h-full min-h-0 overflow-auto tabular-nums"
     >
       <div style={{ height: `${virtualizer.getTotalSize()}px` }}>
         <table className="min-w-full text-sm after:inline-block after:h-(--table-height)">
