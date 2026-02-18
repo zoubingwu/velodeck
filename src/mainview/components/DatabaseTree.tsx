@@ -1,8 +1,8 @@
+import { Table2Icon } from "lucide-react";
+import { memo } from "react";
 import { File, Folder, Tree } from "@/components/ui/file-tree";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table2Icon } from "lucide-react";
-import { memo } from "react";
 
 export type DatabaseTreeItem = {
   name: string;

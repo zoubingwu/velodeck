@@ -1,3 +1,6 @@
+import { flexRender, Table as ReactTable } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useRef } from "react";
 import {
   TableBody,
   TableCell,
@@ -5,9 +8,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Table as ReactTable, flexRender } from "@tanstack/react-table";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef } from "react";
 
 interface DataTableProps<TData> {
   table: ReactTable<TData>;

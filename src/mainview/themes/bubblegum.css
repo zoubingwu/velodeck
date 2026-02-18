@@ -37,16 +37,21 @@
   --radius: 0.4rem;
   --shadow-2xs: 3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 0.5);
   --shadow-xs: 3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 0.5);
-  --shadow-sm: 3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1.0), 3px 1px 2px -1px
-    hsl(325.78 58.18% 56.86% / 1.0);
-  --shadow: 3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1.0), 3px 1px 2px -1px
-    hsl(325.78 58.18% 56.86% / 1.0);
-  --shadow-md: 3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1.0), 3px 2px 4px -1px
-    hsl(325.78 58.18% 56.86% / 1.0);
-  --shadow-lg: 3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1.0), 3px 4px 6px -1px
-    hsl(325.78 58.18% 56.86% / 1.0);
-  --shadow-xl: 3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1.0), 3px 8px 10px
-    -1px hsl(325.78 58.18% 56.86% / 1.0);
+  --shadow-sm:
+    3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1),
+    3px 1px 2px -1px hsl(325.78 58.18% 56.86% / 1);
+  --shadow:
+    3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1),
+    3px 1px 2px -1px hsl(325.78 58.18% 56.86% / 1);
+  --shadow-md:
+    3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1),
+    3px 2px 4px -1px hsl(325.78 58.18% 56.86% / 1);
+  --shadow-lg:
+    3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1),
+    3px 4px 6px -1px hsl(325.78 58.18% 56.86% / 1);
+  --shadow-xl:
+    3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 1),
+    3px 8px 10px -1px hsl(325.78 58.18% 56.86% / 1);
   --shadow-2xl: 3px 3px 0px 0px hsl(325.78 58.18% 56.86% / 2.5);
 }
 
@@ -89,16 +94,21 @@
   --radius: 0.4rem;
   --shadow-2xs: 3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 0.5);
   --shadow-xs: 3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 0.5);
-  --shadow-sm: 3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1.0), 3px 1px 2px -1px
-    hsl(206.15 28.06% 27.25% / 1.0);
-  --shadow: 3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1.0), 3px 1px 2px -1px
-    hsl(206.15 28.06% 27.25% / 1.0);
-  --shadow-md: 3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1.0), 3px 2px 4px -1px
-    hsl(206.15 28.06% 27.25% / 1.0);
-  --shadow-lg: 3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1.0), 3px 4px 6px -1px
-    hsl(206.15 28.06% 27.25% / 1.0);
-  --shadow-xl: 3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1.0), 3px 8px 10px
-    -1px hsl(206.15 28.06% 27.25% / 1.0);
+  --shadow-sm:
+    3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1),
+    3px 1px 2px -1px hsl(206.15 28.06% 27.25% / 1);
+  --shadow:
+    3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1),
+    3px 1px 2px -1px hsl(206.15 28.06% 27.25% / 1);
+  --shadow-md:
+    3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1),
+    3px 2px 4px -1px hsl(206.15 28.06% 27.25% / 1);
+  --shadow-lg:
+    3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1),
+    3px 4px 6px -1px hsl(206.15 28.06% 27.25% / 1);
+  --shadow-xl:
+    3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 1),
+    3px 8px 10px -1px hsl(206.15 28.06% 27.25% / 1);
   --shadow-2xl: 3px 3px 0px 0px hsl(206.15 28.06% 27.25% / 2.5);
 }
 

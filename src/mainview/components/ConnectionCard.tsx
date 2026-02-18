@@ -1,3 +1,6 @@
+import { Clock, Database, Loader, MoreHorizontal } from "lucide-react";
+import { useState } from "react";
+import type { services } from "@/bridge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,9 +27,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Clock, Database, Loader, MoreHorizontal } from "lucide-react";
-import { useState } from "react";
-import type { services } from "@/bridge";
 
 type ConnectionCardProps = {
   id: string;

@@ -6,8 +6,8 @@ import mysql, {
 import type {
   ColumnSchema,
   ConnectionDetails,
-  SQLResult,
   ServerSideFilter,
+  SQLResult,
   TableColumn,
   TableDataResponse,
   TableSchema,
@@ -78,7 +78,9 @@ function flattenOptionValues(values: unknown[]): string[] {
 }
 
 export class DatabaseService {
-  private getConnectionConfig(details: ConnectionDetails): mysql.ConnectionOptions {
+  private getConnectionConfig(
+    details: ConnectionDetails,
+  ): mysql.ConnectionOptions {
     const port = Number(details.port || DEFAULT_TIDB_PORT);
     const useTLS = details.useTLS || details.host.includes(".tidbcloud.com");
 
@@ -103,7 +105,9 @@ export class DatabaseService {
     details: ConnectionDetails,
     run: (conn: Connection) => Promise<T>,
   ): Promise<T> {
-    const conn = await mysql.createConnection(this.getConnectionConfig(details));
+    const conn = await mysql.createConnection(
+      this.getConnectionConfig(details),
+    );
     try {
       return await run(conn);
     } finally {
@@ -118,7 +122,10 @@ export class DatabaseService {
     });
   }
 
-  async executeSQL(details: ConnectionDetails, query: string): Promise<SQLResult> {
+  async executeSQL(
+    details: ConnectionDetails,
+    query: string,
+  ): Promise<SQLResult> {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
       throw new Error("query cannot be empty");
@@ -128,7 +135,9 @@ export class DatabaseService {
       const [rows, fields] = await conn.query(trimmedQuery);
 
       if (Array.isArray(rows)) {
-        const normalizedRows = rows.map((row) => normalizeRow(row as RowDataPacket));
+        const normalizedRows = rows.map((row) =>
+          normalizeRow(row as RowDataPacket),
+        );
         const columns = Array.isArray(fields)
           ? fields.map((field) => field.name)
           : normalizedRows[0]
@@ -165,10 +174,15 @@ export class DatabaseService {
       .filter((name) => name.length > 0);
   }
 
-  async listTables(details: ConnectionDetails, dbName: string): Promise<string[]> {
+  async listTables(
+    details: ConnectionDetails,
+    dbName: string,
+  ): Promise<string[]> {
     const targetDB = dbName || details.dbName;
     if (!targetDB) {
-      throw new Error("no database specified or configured in the connection details");
+      throw new Error(
+        "no database specified or configured in the connection details",
+      );
     }
 
     return this.withConnection(details, async (conn) => {
@@ -250,7 +264,11 @@ export class DatabaseService {
           clauses.push(`${col} BETWEEN ? AND ?`);
           params.push(first, second);
         }
-        if (operator === "is not between" && first !== null && second !== null) {
+        if (
+          operator === "is not between" &&
+          first !== null &&
+          second !== null
+        ) {
           clauses.push(`${col} NOT BETWEEN ? AND ?`);
           params.push(first, second);
         }
@@ -329,7 +347,9 @@ export class DatabaseService {
   ): Promise<TableDataResponse> {
     const targetDB = dbName || details.dbName;
     if (!targetDB) {
-      throw new Error("database name is required either explicitly or in connection details");
+      throw new Error(
+        "database name is required either explicitly or in connection details",
+      );
     }
     if (!tableName) {
       throw new Error("table name is required");
@@ -338,7 +358,10 @@ export class DatabaseService {
     const qDB = quoteIdentifier(targetDB);
     const qTable = quoteIdentifier(tableName);
 
-    const descResult = await this.executeSQL(details, `DESCRIBE ${qDB}.${qTable};`);
+    const descResult = await this.executeSQL(
+      details,
+      `DESCRIBE ${qDB}.${qTable};`,
+    );
     const descRows = descResult.rows || [];
     if (!descRows.length) {
       const exists = await this.checkTableExists(details, targetDB, tableName);
@@ -400,7 +423,9 @@ export class DatabaseService {
   ): Promise<TableSchema> {
     const targetDB = dbName || details.dbName;
     if (!targetDB) {
-      throw new Error("database name is required either explicitly or in connection details");
+      throw new Error(
+        "database name is required either explicitly or in connection details",
+      );
     }
     if (!tableName) {
       throw new Error("table name is required");
@@ -426,7 +451,11 @@ export class DatabaseService {
       );
 
       if (!rows.length) {
-        const exists = await this.checkTableExists(details, targetDB, tableName);
+        const exists = await this.checkTableExists(
+          details,
+          targetDB,
+          tableName,
+        );
         if (!exists) {
           throw new Error(`table '${targetDB}.${tableName}' not found`);
         }

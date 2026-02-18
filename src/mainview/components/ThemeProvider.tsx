@@ -1,12 +1,12 @@
-import { GetThemeSettings, SaveThemeSettings } from "@/bridge";
 import { useQuery } from "@tanstack/react-query";
 import {
-  type ReactNode,
   createContext,
+  type ReactNode,
   useContext,
   useEffect,
   useState,
 } from "react";
+import { GetThemeSettings, SaveThemeSettings } from "@/bridge";
 
 // Define the available theme names. These should match CSS classes.
 // These are the *base* themes you switch between.

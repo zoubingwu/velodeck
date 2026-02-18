@@ -1,7 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  CONFIG_DIR_NAME,
   type Column,
   type ConnectionDetails,
   type ConnectionMetadata,
@@ -9,9 +16,8 @@ import {
   type DescriptionTarget,
   type ForeignKey,
   type Index,
-  type Table,
-  CONFIG_DIR_NAME,
   METADATA_DIR_NAME,
+  type Table,
 } from "../../shared/contracts";
 import { ConfigService } from "./config-service";
 import { DatabaseService } from "./db-service";
@@ -79,14 +85,20 @@ export class MetadataService {
 
     const filePath = this.metadataFilePath(connectionId);
     if (!existsSync(filePath)) {
-      const empty = this.createEmptyMetadata(connectionId, details.name || connectionId);
+      const empty = this.createEmptyMetadata(
+        connectionId,
+        details.name || connectionId,
+      );
       this.metadata.set(connectionId, empty);
       return empty;
     }
 
     const raw = readFileSync(filePath, "utf8").trim();
     if (!raw) {
-      const empty = this.createEmptyMetadata(connectionId, details.name || connectionId);
+      const empty = this.createEmptyMetadata(
+        connectionId,
+        details.name || connectionId,
+      );
       this.metadata.set(connectionId, empty);
       return empty;
     }
@@ -120,7 +132,9 @@ export class MetadataService {
   saveMetadata(connectionId: string): void {
     const metadata = this.metadata.get(connectionId);
     if (!metadata) {
-      throw new Error(`metadata not found in memory for connection: ${connectionId}`);
+      throw new Error(
+        `metadata not found in memory for connection: ${connectionId}`,
+      );
     }
 
     const filePath = this.metadataFilePath(connectionId);
@@ -138,7 +152,8 @@ export class MetadataService {
       throw new Error(`connection not found: ${connectionId}`);
     }
 
-    const metadata = this.metadata.get(connectionId) ||
+    const metadata =
+      this.metadata.get(connectionId) ||
       this.createEmptyMetadata(connectionId, details.name || connectionId);
     metadata.connectionName = details.name || metadata.connectionName;
 
@@ -147,11 +162,16 @@ export class MetadataService {
       databasesToExtract = [optionalDbName.trim()];
     } else {
       const allDatabases = await this.dbService.listDatabases(details);
-      databasesToExtract = allDatabases.filter((dbName) => !isSystemDatabase(dbName));
+      databasesToExtract = allDatabases.filter(
+        (dbName) => !isSystemDatabase(dbName),
+      );
     }
 
     for (const dbName of databasesToExtract) {
-      metadata.databases[dbName] = await this.extractDatabaseMetadata(details, dbName);
+      metadata.databases[dbName] = await this.extractDatabaseMetadata(
+        details,
+        dbName,
+      );
     }
 
     metadata.lastExtracted = new Date().toISOString();
@@ -178,7 +198,9 @@ export class MetadataService {
     }
 
     if (target.type === "table") {
-      const table = dbMetadata.tables.find((item) => item.name === target.tableName);
+      const table = dbMetadata.tables.find(
+        (item) => item.name === target.tableName,
+      );
       if (!table) {
         throw new Error(`table ${target.tableName} not found`);
       }
@@ -186,14 +208,20 @@ export class MetadataService {
       return;
     }
 
-    const table = dbMetadata.tables.find((item) => item.name === target.tableName);
+    const table = dbMetadata.tables.find(
+      (item) => item.name === target.tableName,
+    );
     if (!table) {
       throw new Error(`table ${target.tableName} not found`);
     }
 
-    const column = table.columns.find((item) => item.name === target.columnName);
+    const column = table.columns.find(
+      (item) => item.name === target.columnName,
+    );
     if (!column) {
-      throw new Error(`column ${target.columnName} not found in table ${target.tableName}`);
+      throw new Error(
+        `column ${target.columnName} not found in table ${target.tableName}`,
+      );
     }
 
     column.aiDescription = description;
@@ -294,15 +322,20 @@ export class MetadataService {
       }
     }
 
-    table.columns = tableSchema.columns.map((col): Column => ({
-      name: col.column_name,
-      dataType: col.column_type,
-      isNullable: toBoolFromYesNo(col.is_nullable),
-      isPrimaryKey: false,
-      autoIncrement: String(col.extra || "").toLowerCase() === "auto_increment",
-      defaultValue: col.column_default.Valid ? col.column_default.String : undefined,
-      dbComment: columnComments[col.column_name] || "",
-    }));
+    table.columns = tableSchema.columns.map(
+      (col): Column => ({
+        name: col.column_name,
+        dataType: col.column_type,
+        isNullable: toBoolFromYesNo(col.is_nullable),
+        isPrimaryKey: false,
+        autoIncrement:
+          String(col.extra || "").toLowerCase() === "auto_increment",
+        defaultValue: col.column_default.Valid
+          ? col.column_default.String
+          : undefined,
+        dbComment: columnComments[col.column_name] || "",
+      }),
+    );
 
     const foreignKeysResult = await this.dbService.executeSQL(
       connectionDetails,

@@ -1,3 +1,18 @@
+import type { Column, ColumnMeta, RowData, Table } from "@tanstack/react-table";
+import { useDebounce, useMemoizedFn } from "ahooks";
+import { format, isEqual } from "date-fns";
+import { ArrowRight, Ellipsis, Filter, X } from "lucide-react";
+import React, {
+  cloneElement,
+  createContext,
+  isValidElement,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,11 +35,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TooltipTrigger } from "@/components/ui/tooltip";
 import { useUncontrolled } from "@/hooks/use-uncontrolled";
 import { take, uniq } from "@/lib/array";
+import type { ColumnOption, ElementType } from "@/lib/filters";
 import {
   type ColumnDataType,
-  type FilterModel,
   createNumberRange,
   dateFilterDetails,
+  type FilterModel,
   filterTypeOperatorDetails,
   getColumn,
   getColumnMeta,
@@ -35,23 +51,7 @@ import {
   optionFilterDetails,
   textFilterDetails,
 } from "@/lib/filters";
-import type { ColumnOption, ElementType } from "@/lib/filters";
 import { cn } from "@/lib/utils";
-import type { Column, ColumnMeta, RowData, Table } from "@tanstack/react-table";
-import { useDebounce, useMemoizedFn } from "ahooks";
-import { format, isEqual } from "date-fns";
-import { ArrowRight, Ellipsis, Filter, X } from "lucide-react";
-import React, {
-  cloneElement,
-  isValidElement,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  createContext,
-  useContext,
-} from "react";
-import type { DateRange } from "react-day-picker";
 
 // Type to represent a serializable filter that can be sent to the server
 export type ServerSideFilter = {

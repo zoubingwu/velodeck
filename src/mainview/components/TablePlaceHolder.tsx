@@ -5,7 +5,10 @@ const ROW_HEIGHT_PX = 36;
 const TablePlaceholder = ({
   animate,
   striped = "odd",
-}: { animate?: boolean; striped?: "odd" | "even" }) => {
+}: {
+  animate?: boolean;
+  striped?: "odd" | "even";
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [numberOfRows, setNumberOfRows] = useState(10); // Start with a default
 

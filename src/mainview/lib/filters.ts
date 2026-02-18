@@ -1,6 +1,12 @@
 import "@tanstack/table-core";
-import type { AccessorFn, Column, Row, RowData } from "@tanstack/react-table";
-import type { ColumnMeta, Table } from "@tanstack/react-table";
+import type {
+  AccessorFn,
+  Column,
+  ColumnMeta,
+  Row,
+  RowData,
+  Table,
+} from "@tanstack/react-table";
 import {
   endOfDay,
   isAfter,

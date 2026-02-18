@@ -27,7 +27,9 @@ export class SessionService {
 
   ensureActiveConnection(): { id: string; details: ConnectionDetails } {
     if (!this.activeConnection || !this.activeConnectionId) {
-      throw new Error("no active database connection established for this session");
+      throw new Error(
+        "no active database connection established for this session",
+      );
     }
 
     return {
