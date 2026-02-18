@@ -28,7 +28,7 @@ function DataTable<TData>({ table, height }: DataTableProps<TData>) {
   return (
     <div
       ref={parentRef}
-      className="overflow-auto tabular-nums"
+      className="data-table-scroll overflow-auto tabular-nums"
       style={{ height }}
     >
       <div style={{ height: `${virtualizer.getTotalSize()}px` }}>
