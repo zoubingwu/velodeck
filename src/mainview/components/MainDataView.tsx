@@ -482,66 +482,68 @@ const MainDataView = ({
   });
 
   return (
-    <div className="flex flex-col h-full">
-      <ReactSplitView
-        key="outer-split"
-        defaultSizes={[dbTreeWidth!, window.innerWidth - dbTreeWidth!]}
-        separator={false}
-        onChange={(sizes: number[]) => {
-          if (sizes.length > 0 && sizes[0] > 50) {
-            setDbTreeWidth(sizes[0]);
-          }
-        }}
-      >
-        <ReactSplitView.Pane
-          minSize={DEFAULT_DB_TREE_WIDTH / 2}
-          maxSize={DEFAULT_DB_TREE_WIDTH * 2}
-        >
-          <DatabaseTree
-            databaseTree={databaseTree}
-            isLoadingDatabases={
-              isLoadingNamespaces && databaseTree.length === 0
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex-1 min-h-0">
+        <ReactSplitView
+          key="outer-split"
+          defaultSizes={[dbTreeWidth!, window.innerWidth - dbTreeWidth!]}
+          separator={false}
+          onChange={(sizes: number[]) => {
+            if (sizes.length > 0 && sizes[0] > 50) {
+              setDbTreeWidth(sizes[0]);
             }
-            databasesError={namespacesError}
-            onSelectDatabase={handleSelectNamespace}
-            onSelectTable={handleSelectTable}
-            selectedTable={{ db: currentNamespace, table: currentTable }}
-          />
-        </ReactSplitView.Pane>
-
-        <ReactSplitView.Pane className="flex flex-col overflow-hidden">
-          <ReactSplitView
-            key="inner-split"
-            defaultSizes={[
-              window.innerWidth - dbTreeWidth! - aiPanelWidth!,
-              aiPanelWidth ?? DEFAULT_AI_PANEL_WIDTH,
-            ]}
-            separator={false}
-            onChange={(sizes: number[]) => {
-              if (showAIPanel && sizes.length === 2 && sizes[1] > 50) {
-                setAiPanelWidth(sizes[1]);
-              }
-            }}
+          }}
+        >
+          <ReactSplitView.Pane
+            minSize={DEFAULT_DB_TREE_WIDTH / 2}
+            maxSize={DEFAULT_DB_TREE_WIDTH * 2}
           >
-            <ReactSplitView.Pane minSize={200} className="min-h-0">
-              {tableViewState === "data" ? (
-                <DataTable<TableRowData> table={table} />
-              ) : (
-                <TablePlaceholder animate={tableViewState === "loading"} />
-              )}
-            </ReactSplitView.Pane>
+            <DatabaseTree
+              databaseTree={databaseTree}
+              isLoadingDatabases={
+                isLoadingNamespaces && databaseTree.length === 0
+              }
+              databasesError={namespacesError}
+              onSelectDatabase={handleSelectNamespace}
+              onSelectTable={handleSelectTable}
+              selectedTable={{ db: currentNamespace, table: currentTable }}
+            />
+          </ReactSplitView.Pane>
 
-            <ReactSplitView.Pane
-              visible={showAIPanel}
-              minSize={DEFAULT_AI_PANEL_WIDTH / 2}
-              preferredSize={aiPanelWidth ?? DEFAULT_AI_PANEL_WIDTH}
-              maxSize={DEFAULT_AI_PANEL_WIDTH * 2}
+          <ReactSplitView.Pane className="flex flex-col overflow-hidden">
+            <ReactSplitView
+              key="inner-split"
+              defaultSizes={[
+                window.innerWidth - dbTreeWidth! - aiPanelWidth!,
+                aiPanelWidth ?? DEFAULT_AI_PANEL_WIDTH,
+              ]}
+              separator={false}
+              onChange={(sizes: number[]) => {
+                if (showAIPanel && sizes.length === 2 && sizes[1] > 50) {
+                  setAiPanelWidth(sizes[1]);
+                }
+              }}
             >
-              <AIPanel opened={showAIPanel} />
-            </ReactSplitView.Pane>
-          </ReactSplitView>
-        </ReactSplitView.Pane>
-      </ReactSplitView>
+              <ReactSplitView.Pane minSize={200} className="min-h-0">
+                {tableViewState === "data" ? (
+                  <DataTable<TableRowData> table={table} />
+                ) : (
+                  <TablePlaceholder animate={tableViewState === "loading"} />
+                )}
+              </ReactSplitView.Pane>
+
+              <ReactSplitView.Pane
+                visible={showAIPanel}
+                minSize={DEFAULT_AI_PANEL_WIDTH / 2}
+                preferredSize={aiPanelWidth ?? DEFAULT_AI_PANEL_WIDTH}
+                maxSize={DEFAULT_AI_PANEL_WIDTH * 2}
+              >
+                <AIPanel opened={showAIPanel} />
+              </ReactSplitView.Pane>
+            </ReactSplitView>
+          </ReactSplitView.Pane>
+        </ReactSplitView>
+      </div>
 
       <TooltipProvider delayDuration={0}>
         <div className="flex items-center justify-between px-2 py-0 bg-[var(--card)] gap-2 border-t border-[var(--muted)]/10">
