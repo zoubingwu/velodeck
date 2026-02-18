@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { BrowserWindow, Updater, Utils } from "electrobun/bun";
 import { events } from "./events";
 import { configService, createBunRPC } from "./rpc";
@@ -91,6 +92,19 @@ async function createMainWindow(): Promise<void> {
       mainWindow?.unmaximize();
     },
     readClipboardText: () => Utils.clipboardReadText() ?? "",
+    pickSQLiteFile: async (currentPath: string) => {
+      const startingFolder = currentPath.trim()
+        ? dirname(currentPath.trim())
+        : "~/";
+      const picked = await Utils.openFileDialog({
+        startingFolder,
+        allowedFileTypes: "sqlite,db,db3",
+        canChooseFiles: true,
+        canChooseDirectory: false,
+        allowsMultipleSelection: false,
+      });
+      return picked[0] || "";
+    },
   });
 
   mainWindow = new BrowserWindow({

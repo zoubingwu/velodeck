@@ -10,6 +10,7 @@ import {
   getTableDataSchema,
   getTableSchemaSchema,
   listTablesSchema,
+  pickSQLiteFileSchema,
   startAgentRunSchema,
   themeSettingsSchema,
   windowSettingsSchema,
@@ -45,6 +46,7 @@ export type WindowController = {
   maximise: () => void;
   unmaximise: () => void;
   readClipboardText: () => string;
+  pickSQLiteFile: (currentPath: string) => Promise<string>;
 };
 
 function toRpcError(
@@ -404,6 +406,15 @@ export function createBunRPC(windowController: WindowController) {
 
         async ClipboardGetText(): Promise<string> {
           return windowController.readClipboardText();
+        },
+
+        async PickSQLiteFile(payload: unknown): Promise<string> {
+          try {
+            const input = pickSQLiteFileSchema.parse(payload || {});
+            return await windowController.pickSQLiteFile(input.currentPath);
+          } catch (error) {
+            throw toRpcError(error, "PICK_SQLITE_FILE_FAILED");
+          }
         },
       },
       messages: {},

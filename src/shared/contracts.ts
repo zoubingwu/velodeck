@@ -372,6 +372,10 @@ export const executeSQLSchema = z.object({
   query: z.string().min(1),
 });
 
+export const pickSQLiteFileSchema = z.object({
+  currentPath: z.string().optional().default(""),
+});
+
 export const listTablesSchema = z.object({
   namespaceName: z.string().optional().default(""),
 });

@@ -2,7 +2,7 @@ import { Loader } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { services } from "@/bridge";
-import { SaveConnection, TestConnection } from "@/bridge";
+import { PickSQLiteFile, SaveConnection, TestConnection } from "@/bridge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -266,6 +266,30 @@ export function ConnectionFormDialog({
     }
   };
 
+  const handlePickSQLiteFile = async () => {
+    if (formState.kind !== "sqlite") {
+      return;
+    }
+
+    try {
+      const selectedPath = await PickSQLiteFile(formState.filePath || "");
+      if (!selectedPath) {
+        return;
+      }
+
+      updateFormState({ filePath: selectedPath });
+    } catch (error: unknown) {
+      toast.error("Choose File Failed", {
+        description:
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : "Unable to open file picker.",
+      });
+    }
+  };
+
   const handleTestConnection = async () => {
     setIsTesting(true);
     try {
@@ -446,18 +470,27 @@ export function ConnectionFormDialog({
     if (formState.kind === "sqlite") {
       return (
         <>
-          <div className="grid grid-cols-4 items-center gap-4">
+          <div className="grid grid-cols-4 items-start gap-4">
             <Label htmlFor="filePath" className="text-right">
               File Path
             </Label>
-            <Input
-              id="filePath"
-              value={formState.filePath}
-              onChange={(e) => updateFormState({ filePath: e.target.value })}
-              className="col-span-3"
-              autoComplete="off"
-              placeholder="/path/to/database.sqlite"
-            />
+            <div className="col-span-3 flex items-center gap-2">
+              <Input
+                id="filePath"
+                value={formState.filePath}
+                readOnly
+                className="flex-1"
+                autoComplete="off"
+                placeholder="/path/to/database.sqlite"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePickSQLiteFile}
+              >
+                Choose File
+              </Button>
+            </div>
           </div>
         </>
       );

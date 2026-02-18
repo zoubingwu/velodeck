@@ -24,6 +24,15 @@ export type { services } from "./models";
 type EventHandler = (payload?: any) => void;
 
 const listeners = new Map<string, Set<EventHandler>>();
+const CONNECTION_METHODS = new Set(["ConnectUsingSaved", "TestConnection"]);
+
+function isTimeoutError(message: string): boolean {
+  return (
+    message.includes("rpc timeout") ||
+    message.includes("timed out") ||
+    message.includes("timeout")
+  );
+}
 
 function emitLocal(eventName: string, payload?: unknown): void {
   const handlers = listeners.get(eventName);
@@ -36,38 +45,54 @@ function emitLocal(eventName: string, payload?: unknown): void {
   }
 }
 
-function toFriendlyErrorMessage(rawMessage: string): string {
+function toFriendlyErrorMessage(rawMessage: string, method?: string): string {
   const message = rawMessage.trim();
   const lower = message.toLowerCase();
 
-  if (
-    lower.includes("rpc timeout") ||
-    lower.includes("timed out") ||
-    lower.includes("timeout")
-  ) {
-    return "Connection timed out. Check host, port, network, TLS settings, or TiDB Cloud allowlist.";
+  if (isTimeoutError(lower)) {
+    if (method === "PickSQLiteFile") {
+      return "File picker timed out. Please try again.";
+    }
+
+    if (method && CONNECTION_METHODS.has(method)) {
+      return "Connection timed out. Check host, port, network, TLS settings, or TiDB Cloud allowlist.";
+    }
+
+    return "Request timed out. Please try again.";
   }
 
-  if (lower.includes("econnrefused") || lower.includes("connection refused")) {
+  if (
+    method &&
+    CONNECTION_METHODS.has(method) &&
+    (lower.includes("econnrefused") || lower.includes("connection refused"))
+  ) {
     return "Connection was refused by the server. Verify host/port and whether the database is reachable.";
   }
 
   if (
-    lower.includes("enotfound") ||
-    lower.includes("eai_again") ||
-    lower.includes("getaddrinfo")
+    method &&
+    CONNECTION_METHODS.has(method) &&
+    (lower.includes("enotfound") ||
+      lower.includes("eai_again") ||
+      lower.includes("getaddrinfo"))
   ) {
     return "Cannot resolve database host. Check the host name and DNS/network settings.";
   }
 
-  if (lower.includes("access denied")) {
+  if (
+    method &&
+    CONNECTION_METHODS.has(method) &&
+    lower.includes("access denied")
+  ) {
     return "Authentication failed. Check username/password and account permissions.";
   }
 
   if (
-    lower.includes("tls") ||
-    lower.includes("ssl") ||
-    lower.includes("certificate")
+    method &&
+    CONNECTION_METHODS.has(method) &&
+    (lower.includes("tls") ||
+      lower.includes("ssl") ||
+      lower.includes("certificate"))
   ) {
     return "TLS/SSL verification failed. Check TLS settings and certificates.";
   }
@@ -75,7 +100,7 @@ function toFriendlyErrorMessage(rawMessage: string): string {
   return message;
 }
 
-function normalizeBridgeError(error: unknown): Error {
+function normalizeBridgeError(error: unknown, method?: string): Error {
   if (error && typeof error === "object") {
     const candidate = error as Partial<AppRpcError> & {
       error?: Partial<AppRpcError>;
@@ -83,22 +108,23 @@ function normalizeBridgeError(error: unknown): Error {
     };
 
     if (typeof candidate.message === "string" && candidate.message.length > 0) {
-      return new Error(toFriendlyErrorMessage(candidate.message));
+      return new Error(toFriendlyErrorMessage(candidate.message, method));
     }
 
     if (candidate.error && typeof candidate.error.message === "string") {
-      return new Error(toFriendlyErrorMessage(candidate.error.message));
+      return new Error(toFriendlyErrorMessage(candidate.error.message, method));
     }
   }
 
   if (error instanceof Error) {
-    return new Error(toFriendlyErrorMessage(error.message));
+    return new Error(toFriendlyErrorMessage(error.message, method));
   }
 
-  return new Error(toFriendlyErrorMessage(String(error)));
+  return new Error(toFriendlyErrorMessage(String(error), method));
 }
 
 const webviewRPC = Electroview.defineRPC({
+  maxRequestTime: Infinity,
   handlers: {
     requests: {
       emitEvent(envelope: unknown): null {
@@ -142,7 +168,7 @@ async function rpcRequest<T>(method: string, payload?: unknown): Promise<T> {
 
     return await endpoint(payload);
   } catch (error) {
-    throw normalizeBridgeError(error);
+    throw normalizeBridgeError(error, method);
   }
 }
 
@@ -311,4 +337,8 @@ export async function WindowUnmaximise(): Promise<void> {
 
 export async function ClipboardGetText(): Promise<string> {
   return rpcRequest<string>("ClipboardGetText");
+}
+
+export async function PickSQLiteFile(currentPath = ""): Promise<string> {
+  return rpcRequest<string>("PickSQLiteFile", { currentPath });
 }
