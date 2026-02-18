@@ -14,5 +14,11 @@ export default {
     mac: {
       bundleCEF: false,
     },
+    linux: {
+      bundleCEF: false,
+    },
+    win: {
+      bundleCEF: false,
+    },
   },
 } satisfies ElectrobunConfig;
