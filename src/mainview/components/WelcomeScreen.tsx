@@ -17,7 +17,11 @@ import SettingsModal from "./SettingModal";
 
 type SavedConnectionsMap = Record<string, services.ConnectionDetails>;
 
-const WelcomeScreen = () => {
+interface WelcomeScreenProps {
+  onConnected: (details: services.ConnectionDetails) => void;
+}
+
+const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
   const [savedConnections, setSavedConnections] = useState<SavedConnectionsMap>(
     {},
   );
@@ -53,7 +57,8 @@ const WelcomeScreen = () => {
   const handleConnect = async (connectionId: string) => {
     setConnectingId(connectionId);
     try {
-      await ConnectUsingSaved(connectionId);
+      const details = await ConnectUsingSaved(connectionId);
+      onConnected(details);
     } catch (error: any) {
       console.error(`Connect using ${connectionId} error:`, error);
       toast.error("Connection Failed", { description: error?.message });

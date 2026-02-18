@@ -180,7 +180,6 @@ export function createBunRPC(windowController: WindowController) {
             try {
               const metadata = metadataService.loadMetadata(connectionId);
               if (metadata.lastExtracted) {
-                await attachVersion(connectionId, metadata);
                 await events.emit(
                   APP_EVENTS.metadataExtractionCompleted,
                   metadata,
@@ -200,7 +199,6 @@ export function createBunRPC(windowController: WindowController) {
               throw new Error("active connection is empty after connect");
             }
 
-            await events.emit(APP_EVENTS.connectionEstablished, activeDetails);
             return activeDetails;
           } catch (error) {
             throw toRpcError(error, "CONNECT_FAILED");

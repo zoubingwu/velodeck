@@ -33,6 +33,45 @@ function emitLocal(eventName: string, payload?: unknown): void {
   }
 }
 
+function toFriendlyErrorMessage(rawMessage: string): string {
+  const message = rawMessage.trim();
+  const lower = message.toLowerCase();
+
+  if (
+    lower.includes("rpc timeout") ||
+    lower.includes("timed out") ||
+    lower.includes("timeout")
+  ) {
+    return "Connection timed out. Check host, port, network, TLS settings, or TiDB Cloud allowlist.";
+  }
+
+  if (lower.includes("econnrefused") || lower.includes("connection refused")) {
+    return "Connection was refused by the server. Verify host/port and whether the database is reachable.";
+  }
+
+  if (
+    lower.includes("enotfound") ||
+    lower.includes("eai_again") ||
+    lower.includes("getaddrinfo")
+  ) {
+    return "Cannot resolve database host. Check the host name and DNS/network settings.";
+  }
+
+  if (lower.includes("access denied")) {
+    return "Authentication failed. Check username/password and account permissions.";
+  }
+
+  if (
+    lower.includes("tls") ||
+    lower.includes("ssl") ||
+    lower.includes("certificate")
+  ) {
+    return "TLS/SSL verification failed. Check TLS settings and certificates.";
+  }
+
+  return message;
+}
+
 function normalizeBridgeError(error: unknown): Error {
   if (error && typeof error === "object") {
     const candidate = error as Partial<AppRpcError> & {
@@ -41,19 +80,19 @@ function normalizeBridgeError(error: unknown): Error {
     };
 
     if (typeof candidate.message === "string" && candidate.message.length > 0) {
-      return new Error(candidate.message);
+      return new Error(toFriendlyErrorMessage(candidate.message));
     }
 
     if (candidate.error && typeof candidate.error.message === "string") {
-      return new Error(candidate.error.message);
+      return new Error(toFriendlyErrorMessage(candidate.error.message));
     }
   }
 
   if (error instanceof Error) {
-    return error;
+    return new Error(toFriendlyErrorMessage(error.message));
   }
 
-  return new Error(String(error));
+  return new Error(toFriendlyErrorMessage(String(error)));
 }
 
 const webviewRPC = Electroview.defineRPC({

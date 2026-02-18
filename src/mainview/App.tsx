@@ -19,34 +19,29 @@ function App() {
     },
   );
 
-  useEffect(() => {
-    const cleanupEstablished = EventsOn("connection:established", (payload) => {
-      const details = payload as services.ConnectionDetails;
-      navigateToMain(details);
-    });
-    const cleanupDisconnected = EventsOn("connection:disconnected", () => {
-      handleDisconnect();
-    });
-
-    return () => {
-      cleanupEstablished();
-      cleanupDisconnected();
-    };
-  }, []);
-
   const handleDisconnect = useMemoizedFn(() => {
     setConnectionDetails(null);
     setCurrentView("welcome");
   });
 
+  useEffect(() => {
+    const cleanupDisconnected = EventsOn("connection:disconnected", () => {
+      handleDisconnect();
+    });
+
+    return () => {
+      cleanupDisconnected();
+    };
+  }, [handleDisconnect]);
+
   const triggerDisconnect = useMemoizedFn(() => {
-    Disconnect();
+    void Disconnect();
   });
 
   const renderView = () => {
     switch (currentView) {
       case "welcome":
-        return <WelcomeScreen />;
+        return <WelcomeScreen onConnected={navigateToMain} />;
       case "main":
         return (
           <MainDataView
