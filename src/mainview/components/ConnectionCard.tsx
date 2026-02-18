@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -38,6 +37,20 @@ type ConnectionCardProps = {
   isConnecting: boolean;
   lastUsed: string;
 };
+
+function connectionSummary(details: services.ConnectionDetails): string {
+  switch (details.kind) {
+    case "mysql":
+    case "postgres":
+      return `${details.host}:${details.port} (${details.user})`;
+    case "sqlite":
+      return details.filePath;
+    case "bigquery":
+      return details.projectId;
+  }
+
+  return "";
+}
 
 export const ConnectionCard = ({
   id,
@@ -71,26 +84,19 @@ export const ConnectionCard = ({
       <CardHeader className="">
         <div className="space-y-1 min-w-0">
           <CardTitle className="text-lg break-words">{name}</CardTitle>
-          {/* Optional: Add DB Type if available in details later */}
-          <CardDescription className="text-sm">TiDB/MySQL</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="flex-grow space-y-2 text-sm text-muted-foreground">
-        {/* Host Info */}
         <div className="flex items-center gap-2">
           <Database className="h-4 w-4 shrink-0" />
-          <span className="truncate">
-            {details.host}:{details.port} ({details.user})
-          </span>
+          <span className="truncate">{connectionSummary(details)}</span>
         </div>
-        {/* Last Connected Info */}
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 shrink-0" />
           <span>Last used: {lastUsed}</span>
         </div>
       </CardContent>
       <CardFooter className="flex items-center justify-between gap-2">
-        {/* Connect Button */}
         <Button
           onClick={() => onConnect(id)}
           disabled={isConnecting || isDeleting}
@@ -106,7 +112,6 @@ export const ConnectionCard = ({
           )}
         </Button>
 
-        {/* Replace Delete Button with Dropdown Menu */}
         <AlertDialog>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -1,4 +1,5 @@
 import {
+  type AdapterCapabilities,
   type AppEventName,
   type AppRpcError,
   appEventEnvelopeSchema,
@@ -6,10 +7,12 @@ import {
   type ConnectionDetails,
   type ConnectionMetadata,
   type ExtractMetadataInput,
+  type NamespaceRef,
   type SQLResult,
   type StartAgentRunInput,
   type StartAgentRunOutput,
   type TableDataResponse,
+  type TableRef,
   type TableSchema,
   type ThemeSettings,
   type WindowSettings,
@@ -203,14 +206,14 @@ export async function GetDatabaseMetadata(): Promise<ConnectionMetadata> {
 }
 
 export async function GetTableData(
-  dbName: string,
+  namespaceName: string,
   tableName: string,
   limit: number,
   offset: number,
   filterParams: unknown,
 ): Promise<TableDataResponse> {
   return rpcRequest<TableDataResponse>("GetTableData", {
-    dbName,
+    namespaceName,
     tableName,
     limit,
     offset,
@@ -219,11 +222,11 @@ export async function GetTableData(
 }
 
 export async function GetTableSchema(
-  dbName: string,
+  namespaceName: string,
   tableName: string,
 ): Promise<TableSchema> {
   return rpcRequest<TableSchema>("GetTableSchema", {
-    dbName,
+    namespaceName,
     tableName,
   });
 }
@@ -236,12 +239,16 @@ export async function GetVersion(): Promise<string> {
   return rpcRequest<string>("GetVersion");
 }
 
+export async function GetConnectionCapabilities(): Promise<AdapterCapabilities> {
+  return rpcRequest<AdapterCapabilities>("GetConnectionCapabilities");
+}
+
 export async function GetWindowSettings(): Promise<WindowSettings> {
   return rpcRequest<WindowSettings>("GetWindowSettings");
 }
 
-export async function ListDatabases(): Promise<string[]> {
-  return rpcRequest<string[]>("ListDatabases");
+export async function ListNamespaces(): Promise<NamespaceRef[]> {
+  return rpcRequest<NamespaceRef[]>("ListNamespaces");
 }
 
 export async function ListSavedConnections(): Promise<
@@ -250,8 +257,8 @@ export async function ListSavedConnections(): Promise<
   return rpcRequest<Record<string, ConnectionDetails>>("ListSavedConnections");
 }
 
-export async function ListTables(dbName: string): Promise<string[]> {
-  return rpcRequest<string[]>("ListTables", dbName);
+export async function ListTables(namespaceName: string): Promise<TableRef[]> {
+  return rpcRequest<TableRef[]>("ListTables", namespaceName);
 }
 
 export async function SaveConnection(

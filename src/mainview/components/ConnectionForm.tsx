@@ -1,5 +1,5 @@
 import { Loader } from "lucide-react";
-import React, { FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { services } from "@/bridge";
 import { SaveConnection, TestConnection } from "@/bridge";
@@ -22,19 +22,22 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-// Type definition for the connection details state
-type ConnectionFormState = Pick<
-  services.ConnectionDetails,
-  "host" | "port" | "user" | "password" | "dbName" | "useTLS"
->;
+type ConnectionKind = services.ConnectionDetails["kind"];
 
-const initialFormState: ConnectionFormState = {
-  host: "",
-  port: "4000", // Default TiDB port
-  user: "",
-  password: "",
-  dbName: "",
-  useTLS: true,
+type ConnectionFormDialogProps = {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConnectionSaved: (
+    id: string,
+    connection: services.ConnectionDetails,
+  ) => void;
+  defaultValues: {
+    id: string;
+    name: string;
+    connection: services.ConnectionDetails;
+  } | null;
+  isEditing?: boolean;
+  savedConnections: Record<string, services.ConnectionDetails>;
 };
 
 const falseyTLSValues = new Set([
@@ -47,7 +50,60 @@ const falseyTLSValues = new Set([
   "none",
 ]);
 
-function parseConnectionString(connectionString: string): ConnectionFormState {
+function createDefaultConnection(
+  kind: ConnectionKind,
+): services.ConnectionDetails {
+  switch (kind) {
+    case "mysql":
+      return {
+        kind,
+        host: "",
+        port: "4000",
+        user: "",
+        password: "",
+        dbName: "",
+        useTLS: true,
+      };
+    case "postgres":
+      return {
+        kind,
+        host: "",
+        port: "5432",
+        user: "",
+        password: "",
+        dbName: "",
+        useTLS: false,
+      };
+    case "sqlite":
+      return {
+        kind,
+        filePath: "",
+        readOnly: false,
+        attachedDatabases: [],
+      };
+    case "bigquery":
+      return {
+        kind,
+        projectId: "",
+        location: "US",
+        authType: "application_default_credentials",
+      };
+    default:
+      return {
+        kind: "mysql",
+        host: "",
+        port: "4000",
+        user: "",
+        password: "",
+        dbName: "",
+        useTLS: true,
+      };
+  }
+}
+
+function parseConnectionString(
+  connectionString: string,
+): services.ConnectionDetails {
   const input = connectionString.trim();
   if (!input) {
     throw new Error("Connection string cannot be empty.");
@@ -62,9 +118,13 @@ function parseConnectionString(connectionString: string): ConnectionFormState {
     );
   }
 
-  if (!["mysql:", "mysql2:", "tidb:"].includes(parsed.protocol)) {
+  const protocol = parsed.protocol.toLowerCase();
+  const isMySQL = ["mysql:", "mysql2:", "tidb:"].includes(protocol);
+  const isPostgres = ["postgres:", "postgresql:"].includes(protocol);
+
+  if (!isMySQL && !isPostgres) {
     throw new Error(
-      "Unsupported protocol. Use mysql://, mysql2://, or tidb://",
+      "Unsupported protocol. Use mysql://, mysql2://, tidb://, postgres://, or postgresql://",
     );
   }
 
@@ -86,9 +146,22 @@ function parseConnectionString(connectionString: string): ConnectionFormState {
 
   const dbName = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
 
+  if (isMySQL) {
+    return {
+      kind: "mysql",
+      host: parsed.hostname,
+      port: parsed.port || "4000",
+      user: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+      dbName,
+      useTLS,
+    };
+  }
+
   return {
+    kind: "postgres",
     host: parsed.hostname,
-    port: parsed.port || initialFormState.port,
+    port: parsed.port || "5432",
     user: decodeURIComponent(parsed.username),
     password: decodeURIComponent(parsed.password),
     dbName,
@@ -96,22 +169,14 @@ function parseConnectionString(connectionString: string): ConnectionFormState {
   };
 }
 
-// Add props to control open state and notify on save
-type ConnectionFormDialogProps = {
-  isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConnectionSaved: (
-    id: string,
-    connection: services.ConnectionDetails,
-  ) => void;
-  defaultValues: {
-    id: string;
-    name: string;
-    connection: ConnectionFormState;
-  } | null;
-  isEditing?: boolean;
-  savedConnections: Record<string, services.ConnectionDetails>; // key is now connection ID
-};
+function isHostConnection(
+  connection: services.ConnectionDetails,
+): connection is Extract<
+  services.ConnectionDetails,
+  { kind: "mysql" | "postgres" }
+> {
+  return connection.kind === "mysql" || connection.kind === "postgres";
+}
 
 export function ConnectionFormDialog({
   isOpen,
@@ -121,9 +186,13 @@ export function ConnectionFormDialog({
   isEditing,
   savedConnections,
 }: ConnectionFormDialogProps) {
-  const [formState, setFormState] = useState<ConnectionFormState>(
-    defaultValues?.connection || initialFormState,
+  const initialConnection = useMemo(
+    () => defaultValues?.connection || createDefaultConnection("mysql"),
+    [defaultValues],
   );
+
+  const [formState, setFormState] =
+    useState<services.ConnectionDetails>(initialConnection);
   const [connectionName, setConnectionName] = useState<string>(
     defaultValues?.name || "",
   );
@@ -134,7 +203,9 @@ export function ConnectionFormDialog({
 
   useEffect(() => {
     if (isOpen) {
-      setFormState(defaultValues?.connection || initialFormState);
+      setFormState(
+        defaultValues?.connection || createDefaultConnection("mysql"),
+      );
       setConnectionName(defaultValues?.name || "");
       setConnectionString("");
       setIsImportPopoverOpen(false);
@@ -143,39 +214,54 @@ export function ConnectionFormDialog({
     }
   }, [isOpen, defaultValues]);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    const { name, value, type } = e.target;
-    // Handle checkbox separately
-    if (type === "checkbox" && e.target instanceof HTMLInputElement) {
-      // Cast target to HTMLInputElement after the type guard
-      const inputElement = e.target as HTMLInputElement;
-      setFormState((prev) => ({ ...prev, [name]: inputElement.checked }));
-    } else {
-      setFormState((prev) => ({ ...prev, [name]: value }));
-    }
+  const handleKindChange = (kind: ConnectionKind) => {
+    setFormState((prev) => {
+      if (prev.kind === kind) {
+        return prev;
+      }
+      const base = createDefaultConnection(kind);
+      return {
+        ...base,
+        id: prev.id,
+        name: prev.name,
+      } as services.ConnectionDetails;
+    });
   };
 
-  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setConnectionName(e.target.value);
+  const updateFormState = (patch: Partial<services.ConnectionDetails>) => {
+    setFormState(
+      (prev) =>
+        ({
+          ...prev,
+          ...patch,
+        }) as services.ConnectionDetails,
+    );
   };
 
   const handleConnectionStringImport = () => {
     try {
       const parsed = parseConnectionString(connectionString);
-      setFormState((prev) => ({ ...prev, ...parsed }));
+      setFormState(
+        (prev) =>
+          ({
+            ...parsed,
+            id: prev.id,
+            name: prev.name,
+          }) as services.ConnectionDetails,
+      );
       setConnectionString("");
       setIsImportPopoverOpen(false);
       toast.success("Connection URL imported", {
         description: "Host, port, user, database, and TLS settings are filled.",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Invalid Connection URL", {
         description:
           typeof error === "string"
             ? error
-            : error?.message || "Could not parse connection URL.",
+            : error instanceof Error
+              ? error.message
+              : "Could not parse connection URL.",
       });
     }
   };
@@ -190,16 +276,17 @@ export function ConnectionFormDialog({
         });
       } else {
         toast.error("Connection Test Failed", {
-          description: "Could not ping the database.",
+          description: "Could not connect to the database.",
         });
       }
-    } catch (error: any) {
-      console.error("Test Connection Error:", error);
+    } catch (error: unknown) {
       toast.error("Connection Test Error", {
         description:
           typeof error === "string"
             ? error
-            : error?.message || "An unknown error occurred.",
+            : error instanceof Error
+              ? error.message
+              : "An unknown error occurred.",
       });
     } finally {
       setIsTesting(false);
@@ -207,10 +294,10 @@ export function ConnectionFormDialog({
   };
 
   const handleSave = async (event?: FormEvent<HTMLFormElement>) => {
-    // Prevent default form submission if called from onSubmit
     if (event) {
       event.preventDefault();
     }
+
     const name = connectionName.trim();
     if (!name) {
       toast.error("Missing Connection Name", {
@@ -221,11 +308,10 @@ export function ConnectionFormDialog({
 
     setIsSaving(true);
     try {
-      // Check for name conflicts only with other connections (not the one being edited)
       const isNameTaken = Object.entries(savedConnections).some(
         ([id, details]) => {
           if (isEditing && defaultValues?.id === id) {
-            return false; // Skip the connection being edited
+            return false;
           }
           return details.name === name;
         },
@@ -238,14 +324,12 @@ export function ConnectionFormDialog({
         return;
       }
 
-      // Prepare connection details to save
       const connectionToSave: services.ConnectionDetails = {
         ...formState,
-        name: name,
-        id: isEditing ? defaultValues?.id || "" : "", // Use existing ID if editing, empty for new
+        name,
+        id: isEditing ? defaultValues?.id || "" : "",
       };
 
-      // SaveConnection now handles everything - no need to manually delete
       const savedConnectionId = await SaveConnection(connectionToSave);
 
       toast.success("Connection Saved", {
@@ -257,217 +341,331 @@ export function ConnectionFormDialog({
         id: savedConnectionId,
       });
       onOpenChange(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error("Save Error", {
         description:
           typeof error === "string"
             ? error
-            : error?.message || "Could not save connection.",
+            : error instanceof Error
+              ? error.message
+              : "Could not save connection.",
       });
     } finally {
       setIsSaving(false);
     }
   };
 
+  const renderDriverSpecificFields = () => {
+    if (isHostConnection(formState)) {
+      return (
+        <>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="host" className="text-right">
+              Host
+            </Label>
+            <Input
+              id="host"
+              value={formState.host}
+              onChange={(e) => updateFormState({ host: e.target.value })}
+              className="col-span-3"
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="port" className="text-right">
+              Port
+            </Label>
+            <Input
+              id="port"
+              value={formState.port}
+              onChange={(e) => updateFormState({ port: e.target.value })}
+              className="col-span-3"
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="user" className="text-right">
+              User
+            </Label>
+            <Input
+              id="user"
+              value={formState.user}
+              onChange={(e) => updateFormState({ user: e.target.value })}
+              className="col-span-3"
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="password" className="text-right">
+              Password
+            </Label>
+            <Input
+              id="password"
+              type="password"
+              value={formState.password}
+              onChange={(e) => updateFormState({ password: e.target.value })}
+              className="col-span-3"
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="dbName" className="text-right">
+              Database
+            </Label>
+            <Input
+              id="dbName"
+              value={formState.dbName}
+              onChange={(e) => updateFormState({ dbName: e.target.value })}
+              className="col-span-3"
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label className="text-right">TLS</Label>
+            <div className="col-span-3 flex items-center gap-2">
+              <Checkbox
+                checked={formState.useTLS}
+                onCheckedChange={(checked) =>
+                  updateFormState({ useTLS: checked === true })
+                }
+              />
+              <span className="text-sm text-muted-foreground">
+                Enable TLS/SSL
+              </span>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    if (formState.kind === "sqlite") {
+      return (
+        <>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="filePath" className="text-right">
+              File Path
+            </Label>
+            <Input
+              id="filePath"
+              value={formState.filePath}
+              onChange={(e) => updateFormState({ filePath: e.target.value })}
+              className="col-span-3"
+              autoComplete="off"
+              placeholder="/path/to/database.sqlite"
+            />
+          </div>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <div className="grid grid-cols-4 items-center gap-4">
+          <Label htmlFor="projectId" className="text-right">
+            Project ID
+          </Label>
+          <Input
+            id="projectId"
+            value={formState.projectId}
+            onChange={(e) => updateFormState({ projectId: e.target.value })}
+            className="col-span-3"
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="grid grid-cols-4 items-center gap-4">
+          <Label htmlFor="location" className="text-right">
+            Location
+          </Label>
+          <Input
+            id="location"
+            value={formState.location || ""}
+            onChange={(e) => updateFormState({ location: e.target.value })}
+            className="col-span-3"
+            autoComplete="off"
+            placeholder="US"
+          />
+        </div>
+
+        <div className="grid grid-cols-4 items-center gap-4">
+          <Label htmlFor="authType" className="text-right">
+            Auth Type
+          </Label>
+          <select
+            id="authType"
+            value={formState.authType}
+            onChange={(e) =>
+              updateFormState({
+                authType: e.target.value as typeof formState.authType,
+              })
+            }
+            className="col-span-3 h-9 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="application_default_credentials">ADC</option>
+            <option value="service_account_json">Service Account JSON</option>
+            <option value="service_account_key_file">
+              Service Account Key File
+            </option>
+          </select>
+        </div>
+
+        {formState.authType === "service_account_json" && (
+          <div className="grid grid-cols-4 items-start gap-4">
+            <Label htmlFor="serviceAccountJson" className="text-right pt-2">
+              SA JSON
+            </Label>
+            <textarea
+              id="serviceAccountJson"
+              value={formState.serviceAccountJson || ""}
+              onChange={(e) =>
+                updateFormState({ serviceAccountJson: e.target.value })
+              }
+              className="col-span-3 min-h-28 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              placeholder="Paste service account key JSON"
+            />
+          </div>
+        )}
+
+        {formState.authType === "service_account_key_file" && (
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="serviceAccountKeyFile" className="text-right">
+              Key File
+            </Label>
+            <Input
+              id="serviceAccountKeyFile"
+              value={formState.serviceAccountKeyFile || ""}
+              onChange={(e) =>
+                updateFormState({ serviceAccountKeyFile: e.target.value })
+              }
+              className="col-span-3"
+              autoComplete="off"
+              placeholder="/path/to/service-account.json"
+            />
+          </div>
+        )}
+      </>
+    );
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[525px]">
+      <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>
             {isEditing ? "Edit Database Connection" : "Add Database Connection"}
           </DialogTitle>
           <DialogDescription>
-            Enter details to connect. Provide a name to save the connection for
-            later use.
+            Configure and save your connection profile.
           </DialogDescription>
         </DialogHeader>
+
         <form onSubmit={handleSave}>
           <div className="grid gap-4 py-4">
-            {/* Connection Name Input */}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="connectionName" className="text-right">
                 Name
               </Label>
               <Input
                 id="connectionName"
-                name="connectionName"
                 value={connectionName}
-                onChange={handleNameChange}
+                onChange={(e) => setConnectionName(e.target.value)}
                 className="col-span-3"
-                placeholder="e.g., My TiDB Cloud Dev, Local Test"
+                placeholder="e.g., Prod PG, Local SQLite"
                 autoComplete="off"
-                autoCorrect="off"
               />
             </div>
-            {/* Host */}
+
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="host" className="text-right">
-                Host
+              <Label htmlFor="connectionKind" className="text-right">
+                Type
               </Label>
-              <Input
-                id="host"
-                name="host"
-                value={formState.host}
-                onChange={handleChange}
-                className="col-span-3"
-                placeholder="e.g., gateway01.us-east-1.prod.aws.tidbcloud.com"
-              />
+              <select
+                id="connectionKind"
+                value={formState.kind}
+                onChange={(e) =>
+                  handleKindChange(e.target.value as ConnectionKind)
+                }
+                className="col-span-3 h-9 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="mysql">MySQL / TiDB</option>
+                <option value="postgres">PostgreSQL</option>
+                <option value="sqlite">SQLite</option>
+                <option value="bigquery">BigQuery</option>
+              </select>
             </div>
-            {/* Port */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="port" className="text-right">
-                Port
-              </Label>
-              <Input
-                id="port"
-                name="port"
-                type="number"
-                value={formState.port}
-                onChange={handleChange}
-                className="col-span-3"
-                placeholder="e.g., 4000"
-              />
-            </div>
-            {/* User */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="user" className="text-right">
-                User
-              </Label>
-              <Input
-                id="user"
-                name="user"
-                value={formState.user}
-                onChange={handleChange}
-                className="col-span-3"
-                placeholder="e.g., root or your_db_user"
-              />
-            </div>
-            {/* Password */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="password" className="text-right">
-                Password
-              </Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                value={formState.password}
-                onChange={handleChange}
-                className="col-span-3"
-              />
-            </div>
-            {/* Database Name */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="dbName" className="text-right">
-                Database
-              </Label>
-              <Input
-                id="dbName"
-                name="dbName"
-                value={formState.dbName}
-                onChange={handleChange}
-                className="col-span-3"
-                placeholder="Optional, e.g., test"
-              />
-            </div>
-            {/* Use TLS Checkbox - Note: Go backend auto-detects for .tidbcloud.com */}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="useTLS" className="text-right">
-                Use TLS
-              </Label>
-              <div className="col-span-3 flex items-center space-x-2">
-                <Checkbox
-                  id="useTLS"
-                  name="useTLS"
-                  checked={formState.useTLS}
-                  onCheckedChange={(checked) =>
-                    setFormState((prev) => ({ ...prev, useTLS: !!checked }))
-                  }
-                />
-                <label
-                  htmlFor="useTLS"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground"
-                >
-                  Force TLS, required for TiDB Cloud
-                </label>
-              </div>
-            </div>
+
+            {renderDriverSpecificFields()}
           </div>
 
-          <DialogFooter className="gap-2 sm:justify-between">
-            <Popover
-              open={isImportPopoverOpen}
-              onOpenChange={setIsImportPopoverOpen}
-            >
-              <PopoverTrigger asChild>
+          <DialogFooter className="sm:justify-between">
+            {formState.kind === "mysql" || formState.kind === "postgres" ? (
+              <Popover
+                open={isImportPopoverOpen}
+                onOpenChange={setIsImportPopoverOpen}
+              >
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="outline">
+                    Import from URL
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[420px] space-y-3">
+                  <Input
+                    value={connectionString}
+                    onChange={(e) => setConnectionString(e.target.value)}
+                    placeholder="mysql://user:password@host:4000/dbname"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleConnectionStringImport}
+                    className="w-full"
+                  >
+                    Import
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <div />
+            )}
+
+            <div className="flex items-center gap-2">
+              <DialogClose asChild>
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={isTesting || isSaving}
+                  disabled={isSaving || isTesting}
                 >
-                  Import from URL
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-80 sm:w-[430px]">
-                <div className="space-y-3">
-                  <Label htmlFor="connectionString">Connection String</Label>
-                  <Input
-                    id="connectionString"
-                    name="connectionString"
-                    value={connectionString}
-                    onChange={(e) => setConnectionString(e.target.value)}
-                    placeholder="mysql://user:password@host:4000/dbname?tls=true"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        handleConnectionStringImport();
-                      }
-                    }}
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setIsImportPopoverOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={handleConnectionStringImport}
-                      disabled={
-                        !connectionString.trim() || isTesting || isSaving
-                      }
-                    >
-                      Import
-                    </Button>
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-            <div className="flex gap-2">
-              <DialogClose asChild>
-                <Button type="button" variant="ghost">
                   Cancel
                 </Button>
               </DialogClose>
               <Button
                 type="button"
-                variant="secondary"
+                variant="outline"
                 onClick={handleTestConnection}
-                disabled={isTesting || isSaving || !formState.host}
+                disabled={isSaving || isTesting}
               >
-                {isTesting && <Loader className="h-4 w-4 animate-spin" />}
-                {isTesting ? "Testing..." : "Test"}
+                {isTesting ? (
+                  <>
+                    <Loader className="h-4 w-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  "Test Connection"
+                )}
               </Button>
-              <Button
-                type="submit"
-                disabled={isTesting || isSaving || !connectionName.trim()}
-              >
-                {isSaving && <Loader className="h-4 w-4 animate-spin" />}
-                {isSaving ? "Saving..." : "Save"}
+              <Button type="submit" disabled={isSaving || isTesting}>
+                {isSaving ? (
+                  <>
+                    <Loader className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save"
+                )}
               </Button>
             </div>
           </DialogFooter>

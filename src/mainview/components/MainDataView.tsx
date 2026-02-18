@@ -1,31 +1,33 @@
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import {
-  CellContext,
-  ColumnDef,
+  type CellContext,
+  type ColumnDef,
   getCoreRowModel,
   getPaginationRowModel,
-  PaginationState,
-  Table as ReactTable,
-  Updater,
+  type PaginationState,
+  type Table as ReactTable,
+  type Updater,
   useReactTable,
 } from "@tanstack/react-table";
 import { useLocalStorageState, useMemoizedFn } from "ahooks";
 import { Allotment as ReactSplitView } from "allotment";
+import type { services } from "@/bridge";
 import {
   EventsOn,
   ExtractDatabaseMetadata,
+  GetConnectionCapabilities,
   GetDatabaseMetadata,
   GetTableData,
-  ListDatabases,
+  ListNamespaces,
   ListTables,
 } from "@/bridge";
 import { AIPanel } from "@/components/AIPanel";
-import { DatabaseTree, DatabaseTreeItem } from "@/components/DatabaseTree";
+import { DatabaseTree, type DatabaseTreeItem } from "@/components/DatabaseTree";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import { Button } from "@/components/ui/button";
 import {
   DataTableFilter,
-  ServerSideFilter,
+  type ServerSideFilter,
 } from "@/components/ui/data-table-filter";
 import {
   Tooltip,
@@ -39,30 +41,35 @@ import {
   isSystemDatabase,
   mapDbColumnTypeToFilterType,
 } from "@/lib/utils";
-import "allotment/dist/style.css"; // for 3 column split view
+import "allotment/dist/style.css";
 import { Loader, SettingsIcon, SparkleIcon, UnplugIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useImmer } from "use-immer";
-import type { services } from "@/bridge";
 import DataTable from "./DataTable";
 import SettingsModal from "./SettingModal";
 import TablePlaceholder from "./TablePlaceHolder";
 
-// Use `any` for row data initially, can be refined if needed
 type TableRowData = Record<string, any>;
-
-// Rename to avoid conflict with the imported component
 type DatabaseTreeData = DatabaseTreeItem[];
 
+type TableState = {
+  namespaceName: string;
+  tableName: string;
+  pageSize: number;
+  pageIndex: number;
+  serverFilters: ServerSideFilter[];
+};
+
 const defaultPageSize = 50;
-const defaultTableDataParameters = {
-  dbName: "",
+const defaultTableState: TableState = {
+  namespaceName: "",
   tableName: "",
   pageSize: defaultPageSize,
   pageIndex: 0,
   serverFilters: [],
 };
+
 const TITLE_BAR_HEIGHT = 0;
 const FOOTER_HEIGHT = 40;
 const DEFAULT_DB_TREE_WIDTH = 240;
@@ -73,7 +80,6 @@ const LAYOUT_DB_TREE_WIDTH_KEY = "layout:dbTreeWidth";
 const LAYOUT_AI_PANEL_WIDTH_KEY = "layout:aiPanelWidth";
 const LAYOUT_AI_PANEL_VISIBLE_KEY = "layout:aiPanelVisible";
 
-// @TODO: make it configurable
 const SHOW_SYSTEM_DATABASES = false;
 
 const MainDataView = ({
@@ -85,18 +91,13 @@ const MainDataView = ({
 }) => {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [databaseTree, setDatabaseTree] = useImmer<DatabaseTreeData>([]);
-  const [tableDataPrameters, setTableDataPrameters] = useImmer<{
-    dbName: string;
-    tableName: string;
-    pageSize: number;
-    pageIndex: number;
-    serverFilters: ServerSideFilter[];
-  }>(defaultTableDataParameters);
-  const currentDb = tableDataPrameters.dbName;
-  const currentTable = tableDataPrameters.tableName;
-  const currentPageSize = tableDataPrameters.pageSize;
-  const currentPageIndex = tableDataPrameters.pageIndex;
-  const currentServerFilters = tableDataPrameters.serverFilters;
+  const [tableState, setTableState] = useImmer<TableState>(defaultTableState);
+
+  const currentNamespace = tableState.namespaceName;
+  const currentTable = tableState.tableName;
+  const currentPageSize = tableState.pageSize;
+  const currentPageIndex = tableState.pageIndex;
+  const currentServerFilters = tableState.serverFilters;
 
   const appendActivityLog = useMemoizedFn((log: string) => {
     setActivityLog((prev) => [...prev, log]);
@@ -123,134 +124,156 @@ const MainDataView = ({
     },
   );
 
-  const mergeDatabaseTree = (
-    tree: { dbName: string; tables?: string[]; isLoadingTables?: boolean }[],
-  ) => {
-    setDatabaseTree((draft: DatabaseTreeData) => {
-      tree.forEach((db) => {
-        const existing = draft.find((item) => item.name === db.dbName);
-        if (existing) {
-          if (db.tables) {
-            existing.tables = db.tables;
+  const mergeDatabaseTree = useMemoizedFn(
+    (
+      entries: {
+        namespaceName: string;
+        tables?: string[];
+        isLoadingTables?: boolean;
+      }[],
+    ) => {
+      setDatabaseTree((draft) => {
+        entries.forEach((entry) => {
+          const existing = draft.find(
+            (item) => item.name === entry.namespaceName,
+          );
+          if (existing) {
+            if (entry.tables) {
+              existing.tables = entry.tables;
+            }
+            existing.isLoadingTables = entry.isLoadingTables ?? false;
+            return;
           }
-          existing.isLoadingTables = db.isLoadingTables ?? false;
-        } else {
-          draft.push({
-            name: db.dbName,
-            tables: db.tables || [],
-            isLoadingTables: db.isLoadingTables ?? false,
-          });
-        }
 
-        // system databases first, then alphabetically
+          draft.push({
+            name: entry.namespaceName,
+            tables: entry.tables || [],
+            isLoadingTables: entry.isLoadingTables ?? false,
+          });
+        });
+
         draft.sort((a, b) => {
           const isASystemDb = isSystemDatabase(a.name);
           const isBSystemDb = isSystemDatabase(b.name);
           if (isASystemDb && !isBSystemDb) {
-            return -1; // a comes first
+            return -1;
           }
           if (!isASystemDb && isBSystemDb) {
-            return 1; // b comes first
+            return 1;
           }
-          // If both are system or both are not system, sort alphabetically by name
           return a.name.localeCompare(b.name);
         });
       });
-    });
-  };
+    },
+  );
 
-  // --- List Databases Query (keeps automatic fetching for initial page load) ---
+  const { data: connectionCapabilities } = useQuery<
+    services.AdapterCapabilities,
+    Error
+  >({
+    queryKey: ["connectionCapabilities", connectionDetails?.id],
+    queryFn: GetConnectionCapabilities,
+    enabled: Boolean(connectionDetails?.id),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
   const {
-    data: databases = [],
-    isLoading: isLoadingDatabases,
-    error: databasesError,
-  } = useQuery<string[], Error>({
-    queryKey: ["databases"],
-    queryFn: ListDatabases,
-    staleTime: 15 * 60 * 1000, // Cache for 15 minutes
+    data: namespaces = [],
+    isLoading: isLoadingNamespaces,
+    error: namespacesError,
+  } = useQuery<services.NamespaceRef[], Error>({
+    queryKey: ["namespaces"],
+    queryFn: ListNamespaces,
+    staleTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 
-  useEffect(() => {
-    if (databases?.length) {
-      console.log("databases fetched", databases);
+  const indexStartedRef = useRef(false);
+  const triggerIndexer = useMemoizedFn(
+    (force: boolean, namespaceName?: string) => {
+      if (indexStartedRef.current && !force) {
+        return;
+      }
+      indexStartedRef.current = true;
 
-      const filteredDatabases = databases.filter((i) =>
-        SHOW_SYSTEM_DATABASES ? true : !isSystemDatabase(i),
+      appendActivityLog("Indexing metadata...");
+      const connectionId = connectionDetails?.id;
+      if (!connectionId) {
+        appendActivityLog("Indexing skipped: no active connection.");
+        return;
+      }
+
+      void ExtractDatabaseMetadata({
+        connectionId,
+        force,
+        namespaceName: namespaceName ?? "",
+      }).catch((error) => {
+        const message =
+          error instanceof Error ? error.message : String(error ?? "unknown");
+        appendActivityLog(`Indexing metadata failed: ${message}`);
+      });
+    },
+  );
+
+  useEffect(() => {
+    if (!namespaces.length) {
+      return;
+    }
+
+    const visibleNamespaces = namespaces
+      .map((item) => item.namespaceName)
+      .filter((name) =>
+        connectionDetails?.kind === "mysql" && !SHOW_SYSTEM_DATABASES
+          ? !isSystemDatabase(name)
+          : true,
       );
 
-      mergeDatabaseTree(filteredDatabases.map((dbName) => ({ dbName })));
+    mergeDatabaseTree(
+      visibleNamespaces.map((namespaceName) => ({ namespaceName })),
+    );
 
-      // Check if databases exist in metadata, trigger indexer if not
-      const checkMetadataAndTriggerIndexer = async () => {
-        try {
-          const metadata = await GetDatabaseMetadata();
-          const metadataDbs = Object.keys(metadata?.databases || {});
-
-          const missingDbs = filteredDatabases.filter(
-            (dbName) => !metadataDbs.includes(dbName),
+    const checkMetadataAndTriggerIndexer = async () => {
+      try {
+        const metadata = await GetDatabaseMetadata();
+        const existing = Object.keys(metadata?.namespaces || {});
+        const missing = visibleNamespaces.filter(
+          (name) => !existing.includes(name),
+        );
+        if (missing.length > 0) {
+          missing.forEach((namespaceName) =>
+            triggerIndexer(true, namespaceName),
           );
-
-          if (missingDbs.length > 0) {
-            console.log("Databases missing from metadata:", missingDbs);
-            missingDbs.forEach((dbName) => triggerIndexer(true, dbName));
-          }
-        } catch (error) {
-          console.log("Error checking metadata, triggering indexer:", error);
-          triggerIndexer(true);
         }
-      };
+      } catch {
+        triggerIndexer(true);
+      }
+    };
 
-      checkMetadataAndTriggerIndexer();
-    }
-  }, [databases]);
-
-  const indexStartedRef = useRef(false);
-  const triggerIndexer = useMemoizedFn((force: boolean, dbName?: string) => {
-    if (indexStartedRef.current && !force) {
-      return;
-    }
-    indexStartedRef.current = true;
-
-    appendActivityLog("Indexing database...");
-    const connectionId = connectionDetails?.id;
-    if (!connectionId) {
-      appendActivityLog("Indexing skipped: no active connection.");
-      return;
-    }
-
-    void ExtractDatabaseMetadata({
-      connectionId,
-      force,
-      dbName: dbName ?? "",
-    }).catch((error) => {
-      const message =
-        error instanceof Error ? error.message : String(error ?? "unknown");
-      appendActivityLog(`Indexing database failed: ${message}`);
-    });
-  });
+    void checkMetadataAndTriggerIndexer();
+  }, [namespaces, connectionDetails?.kind, mergeDatabaseTree, triggerIndexer]);
 
   useEffect(() => {
-    const cleanup1 = EventsOn("metadata:extraction:failed", (payload) => {
+    const cleanupFailed = EventsOn("metadata:extraction:failed", (payload) => {
       const error =
         typeof payload === "string"
           ? payload
           : String(payload ?? "unknown error");
-      appendActivityLog(`Indexing database failed: ${error}`);
+      appendActivityLog(`Indexing metadata failed: ${error}`);
     });
 
-    const cleanup2 = EventsOn(
+    const cleanupCompleted = EventsOn(
       "metadata:extraction:completed",
       async (payload) => {
         const metadata = payload as services.ConnectionMetadata;
-        appendActivityLog("Indexing database completed.");
+        appendActivityLog("Indexing metadata completed.");
         if (metadata.version) {
           appendActivityLog(`Connected to ${metadata.version}`);
         }
+
         mergeDatabaseTree(
-          Object.keys(metadata.databases).map((dbName) => ({
-            dbName,
-            tables: metadata.databases[dbName].tables.map(
+          Object.keys(metadata.namespaces).map((namespaceName) => ({
+            namespaceName,
+            tables: metadata.namespaces[namespaceName].tables.map(
               (table) => table.name,
             ),
             isLoadingTables: false,
@@ -262,62 +285,65 @@ const MainDataView = ({
     triggerIndexer(false);
 
     return () => {
-      cleanup1();
-      cleanup2();
+      cleanupFailed();
+      cleanupCompleted();
     };
-  }, []);
+  }, [appendActivityLog, mergeDatabaseTree, triggerIndexer]);
 
   const { mutateAsync: fetchTables } = useMutation({
-    mutationFn: (dbName: string) => ListTables(dbName),
-    onMutate: (dbName: string) => {
-      if (!databaseTree.find((db) => db.name === dbName)?.tables?.length) {
-        mergeDatabaseTree([{ dbName, isLoadingTables: true }]);
+    mutationFn: (namespaceName: string) => ListTables(namespaceName),
+    onMutate: (namespaceName: string) => {
+      if (
+        !databaseTree.find((db) => db.name === namespaceName)?.tables?.length
+      ) {
+        mergeDatabaseTree([{ namespaceName, isLoadingTables: true }]);
       }
     },
-    onSuccess: (tables, dbName) => {
-      mergeDatabaseTree([{ dbName, tables, isLoadingTables: false }]);
+    onSuccess: (tables, namespaceName) => {
+      mergeDatabaseTree([
+        {
+          namespaceName,
+          tables: tables.map((table) => table.tableName),
+          isLoadingTables: false,
+        },
+      ]);
     },
-    onError: (error, dbName) => {
-      mergeDatabaseTree([{ dbName, isLoadingTables: false }]);
+    onError: (error, namespaceName) => {
+      mergeDatabaseTree([{ namespaceName, isLoadingTables: false }]);
       appendActivityLog(`Error fetching tables: ${error.message}`);
     },
   });
 
-  // fetch from a specific table
   const { data: tableData, isFetching: isFetchingTableData } = useQuery({
-    enabled: !!currentDb && !!currentTable,
+    enabled: !!currentNamespace && !!currentTable,
     queryKey: [
       "tableData",
-      currentDb,
+      currentNamespace,
       currentTable,
       currentPageSize,
       currentPageIndex,
       currentServerFilters,
     ],
     queryFn: async () => {
-      const dbName = currentDb;
-      const tableName = currentTable;
       const filterObject =
-        currentServerFilters.length > 0
-          ? { filters: currentServerFilters }
-          : null;
+        connectionCapabilities?.supportsServerSideFilter === false
+          ? null
+          : currentServerFilters.length > 0
+            ? { filters: currentServerFilters }
+            : null;
 
-      const titleTarget = tableName
-        ? `${dbName}.${tableName}`
-        : "SQL Query Result";
+      const titleTarget = `${currentNamespace}.${currentTable}`;
 
       try {
         appendActivityLog(`Fetching data from ${titleTarget}...`);
         const res = await GetTableData(
-          dbName,
-          tableName,
+          currentNamespace,
+          currentTable,
           currentPageSize,
           currentPageIndex * currentPageSize,
           filterObject,
         );
-        console.log("tableData", res);
-        appendActivityLog(`Fetched data from ${dbName}.${tableName}`);
-
+        appendActivityLog(`Fetched data from ${titleTarget}`);
         return res;
       } catch (error: any) {
         appendActivityLog(
@@ -333,7 +359,11 @@ const MainDataView = ({
   });
 
   const handleFilterChange = useMemoizedFn((filters: ServerSideFilter[]) => {
-    setTableDataPrameters((draft) => {
+    if (connectionCapabilities?.supportsServerSideFilter === false) {
+      return;
+    }
+
+    setTableState((draft) => {
       draft.serverFilters = filters;
       draft.pageIndex = 0;
     });
@@ -343,43 +373,36 @@ const MainDataView = ({
     const renderCell = (info: CellContext<TableRowData, unknown>) => {
       const value = info.getValue();
       if (value === null || value === undefined) {
-        // Style NULL values
         return <span className="text-muted-foreground italic">NULL</span>;
       }
       if (value === "") {
-        // Style empty strings differently
         return <span className="text-muted-foreground italic">EMPTY</span>;
       }
-      // Render other values as strings
       return String(value).slice(0, 10000);
     };
 
-    if (tableData?.columns) {
-      return [
-        ...(tableData.columns.map((col): ColumnDef<TableRowData> => {
-          const type = mapDbColumnTypeToFilterType(col.type);
-
-          return {
-            accessorKey: col.name,
-            header: col.name,
-            cell: renderCell,
-            filterFn: filterFn(type),
-            meta: {
-              displayName: col.name,
-              type: type,
-              icon: ColumnDataTypeIcons[type],
-            },
-          };
-        }) || []),
-      ];
+    if (!tableData?.columns) {
+      return [];
     }
 
-    return [];
+    return tableData.columns.map((column): ColumnDef<TableRowData> => {
+      const type = mapDbColumnTypeToFilterType(column.type);
+      return {
+        accessorKey: column.name,
+        header: column.name,
+        cell: renderCell,
+        filterFn: filterFn(type),
+        meta: {
+          displayName: column.name,
+          type,
+          icon: ColumnDataTypeIcons[type],
+        },
+      };
+    });
   }, [tableData?.columns]);
 
   const totalRowCount = tableData?.totalRows;
 
-  // --- Calculate pagination values ---
   const pagination = useMemo(
     () => ({
       pageIndex: currentPageIndex,
@@ -396,7 +419,7 @@ const MainDataView = ({
   }, [totalRowCount, currentPageSize]);
 
   const tableViewState = (() => {
-    if (isLoadingDatabases) {
+    if (isLoadingNamespaces) {
       return "init";
     }
 
@@ -404,21 +427,21 @@ const MainDataView = ({
       return "loading";
     }
 
-    if (currentDb && currentTable && tableData?.columns?.length) {
+    if (currentNamespace && currentTable && tableData?.columns?.length) {
       return "data";
     }
 
     return "empty";
   })();
 
-  const handleSelectDatabase = useMemoizedFn((dbName: string) => {
-    fetchTables(dbName);
+  const handleSelectNamespace = useMemoizedFn((namespaceName: string) => {
+    void fetchTables(namespaceName);
   });
 
   const handleSelectTable = useMemoizedFn(
-    (dbName: string, tableName: string) => {
-      setTableDataPrameters((draft) => {
-        draft.dbName = dbName;
+    (namespaceName: string, tableName: string) => {
+      setTableState((draft) => {
+        draft.namespaceName = namespaceName;
         draft.tableName = tableName;
         draft.serverFilters = [];
         draft.pageIndex = 0;
@@ -428,25 +451,19 @@ const MainDataView = ({
 
   const handlePaginationChange = useMemoizedFn(
     (updaterOrValue: Updater<PaginationState>) => {
-      const newPagination =
+      const nextPagination =
         typeof updaterOrValue === "function"
           ? updaterOrValue(pagination)
           : updaterOrValue;
 
-      setTableDataPrameters((draft) => {
-        draft.pageIndex = newPagination.pageIndex;
-        draft.pageSize = newPagination.pageSize;
+      setTableState((draft) => {
+        draft.pageIndex = nextPagination.pageIndex;
+        draft.pageSize = nextPagination.pageSize;
       });
     },
   );
 
-  const handleClose = useMemoizedFn(() => {
-    onClose();
-  });
-
-  const data = useMemo(() => {
-    return tableData?.rows ?? [];
-  }, [tableData]);
+  const data = useMemo(() => tableData?.rows ?? [], [tableData]);
 
   const table: ReactTable<TableRowData> = useReactTable({
     data,
@@ -475,7 +492,6 @@ const MainDataView = ({
         separator={false}
         onChange={(sizes: number[]) => {
           if (sizes.length > 0 && sizes[0] > 50) {
-            // Ensure a minimum sensible width
             setDbTreeWidth(sizes[0]);
           }
         }}
@@ -486,26 +502,26 @@ const MainDataView = ({
         >
           <DatabaseTree
             databaseTree={databaseTree}
-            isLoadingDatabases={isLoadingDatabases && databaseTree.length === 0}
-            databasesError={databasesError}
-            onSelectDatabase={handleSelectDatabase}
+            isLoadingDatabases={
+              isLoadingNamespaces && databaseTree.length === 0
+            }
+            databasesError={namespacesError}
+            onSelectDatabase={handleSelectNamespace}
             onSelectTable={handleSelectTable}
-            selectedTable={{ db: currentDb, table: currentTable }}
+            selectedTable={{ db: currentNamespace, table: currentTable }}
           />
         </ReactSplitView.Pane>
 
         <ReactSplitView.Pane className="flex flex-col overflow-hidden">
           <ReactSplitView
-            key={`inner-split`}
+            key="inner-split"
             defaultSizes={[
               window.innerWidth - dbTreeWidth! - aiPanelWidth!,
               aiPanelWidth ?? DEFAULT_AI_PANEL_WIDTH,
             ]}
             separator={false}
             onChange={(sizes: number[]) => {
-              // sizes[0] is table width, sizes[1] is AI panel width (if visible)
               if (showAIPanel && sizes.length === 2 && sizes[1] > 50) {
-                // Ensure a minimum
                 setAiPanelWidth(sizes[1]);
               }
             }}
@@ -572,16 +588,18 @@ const MainDataView = ({
             />
 
             <div className="flex gap-2">
-              <Tooltip>
-                <DataTableFilter
-                  table={table}
-                  onChange={handleFilterChange}
-                  disabled={tableViewState !== "data"}
-                />
-                <TooltipContent>
-                  <p>Filter</p>
-                </TooltipContent>
-              </Tooltip>
+              {connectionCapabilities?.supportsServerSideFilter !== false && (
+                <Tooltip>
+                  <DataTableFilter
+                    table={table}
+                    onChange={handleFilterChange}
+                    disabled={tableViewState !== "data"}
+                  />
+                  <TooltipContent>
+                    <p>Filter</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -616,7 +634,7 @@ const MainDataView = ({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={handleClose}
+                    onClick={onClose}
                     title="Disconnect"
                   >
                     <UnplugIcon className="size-3.5" />

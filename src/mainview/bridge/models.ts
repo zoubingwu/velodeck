@@ -1,4 +1,5 @@
 import type {
+  AdapterCapabilities as SharedAdapterCapabilities,
   AgentRunEventPayload as SharedAgentRunEventPayload,
   AgentRunStatusPayload as SharedAgentRunStatusPayload,
   Column as SharedColumn,
@@ -9,17 +10,20 @@ import type {
   Edge as SharedEdge,
   ForeignKey as SharedForeignKey,
   Index as SharedIndex,
+  NamespaceRef as SharedNamespaceRef,
   NullString as SharedNullString,
   SQLResult as SharedSQLResult,
   Table as SharedTable,
   TableColumn as SharedTableColumn,
   TableDataResponse as SharedTableDataResponse,
+  TableRef as SharedTableRef,
   TableSchema as SharedTableSchema,
   ThemeSettings as SharedThemeSettings,
   WindowSettings as SharedWindowSettings,
 } from "@shared/contracts";
 
 export namespace services {
+  export type AdapterCapabilities = SharedAdapterCapabilities;
   export type Column = SharedColumn;
   export type ColumnSchema = SharedColumnSchema;
   export type ConnectionDetails = SharedConnectionDetails;
@@ -31,6 +35,8 @@ export namespace services {
   export type Edge = SharedEdge;
 
   export type SQLResult = SharedSQLResult;
+  export type NamespaceRef = SharedNamespaceRef;
+  export type TableRef = SharedTableRef;
   export type TableColumn = SharedTableColumn;
   export type TableDataResponse = SharedTableDataResponse;
   export type TableSchema = SharedTableSchema;
