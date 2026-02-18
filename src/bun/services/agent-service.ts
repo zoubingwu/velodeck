@@ -31,9 +31,9 @@ const CODEX_ARGS = [
   "read-only",
 ] as const;
 
-const SKILL_MD_TEMPLATE = `# TiDB Read-only SQL Skill
+const SKILL_MD_TEMPLATE = `# VeloDeck Read-only SQL Skill
 
-Use this skill when you need to run read-only SQL against the active TiDB connection.
+Use this skill when you need to run read-only SQL against the active VeloDeck connection.
 
 ## Rules
 - Only read-only SQL is allowed.
@@ -47,9 +47,9 @@ Run the helper script below and pass the SQL text:
 ./scripts/sql_read.sh "SELECT * FROM users LIMIT 10"
 \`\`\`
 
-The script calls the local TiDB Desktop bridge via:
-- \`TIDB_AGENT_BRIDGE_URL\`
-- \`TIDB_AGENT_BRIDGE_TOKEN\`
+The script calls the local VeloDeck bridge via:
+- \`VELODECK_AGENT_BRIDGE_URL\`
+- \`VELODECK_AGENT_BRIDGE_TOKEN\`
 `;
 
 const SKILL_SCRIPT_TEMPLATE = `#!/usr/bin/env bash
@@ -60,18 +60,18 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
-if [[ -z "\${TIDB_AGENT_BRIDGE_URL:-}" || -z "\${TIDB_AGENT_BRIDGE_TOKEN:-}" ]]; then
-  echo "missing TIDB_AGENT_BRIDGE_URL or TIDB_AGENT_BRIDGE_TOKEN" >&2
+if [[ -z "\${VELODECK_AGENT_BRIDGE_URL:-}" || -z "\${VELODECK_AGENT_BRIDGE_TOKEN:-}" ]]; then
+  echo "missing VELODECK_AGENT_BRIDGE_URL or VELODECK_AGENT_BRIDGE_TOKEN" >&2
   exit 1
 fi
 
 query="$*"
 
 curl -sS \\
-  -H "Authorization: Bearer \${TIDB_AGENT_BRIDGE_TOKEN}" \\
+  -H "Authorization: Bearer \${VELODECK_AGENT_BRIDGE_TOKEN}" \\
   -H "Content-Type: text/plain; charset=utf-8" \\
   --data "$query" \\
-  "\${TIDB_AGENT_BRIDGE_URL}/v1/sql/read"
+  "\${VELODECK_AGENT_BRIDGE_URL}/v1/sql/read"
 `;
 
 export class AgentService {
@@ -164,48 +164,48 @@ export class AgentService {
       env[key] = String(value ?? "");
     }
 
-    env.TIDB_AGENT_BRIDGE_URL = this.bridgeService.getBaseURL();
-    env.TIDB_AGENT_BRIDGE_TOKEN = bridgeToken;
-    env.TIDB_ACTIVE_DB_KIND = activeConnection?.kind || "";
+    env.VELODECK_AGENT_BRIDGE_URL = this.bridgeService.getBaseURL();
+    env.VELODECK_AGENT_BRIDGE_TOKEN = bridgeToken;
+    env.VELODECK_ACTIVE_DB_KIND = activeConnection?.kind || "";
 
     if (!activeConnection) {
-      env.TIDB_ACTIVE_DB_HOST = "";
-      env.TIDB_ACTIVE_DB_PORT = "";
-      env.TIDB_ACTIVE_DB_USER = "";
-      env.TIDB_ACTIVE_DB_NAME = "";
-      env.TIDB_ACTIVE_DB_TLS = "0";
+      env.VELODECK_ACTIVE_DB_HOST = "";
+      env.VELODECK_ACTIVE_DB_PORT = "";
+      env.VELODECK_ACTIVE_DB_USER = "";
+      env.VELODECK_ACTIVE_DB_NAME = "";
+      env.VELODECK_ACTIVE_DB_TLS = "0";
       return env;
     }
 
     switch (activeConnection.kind) {
       case "mysql":
       case "postgres":
-        env.TIDB_ACTIVE_DB_HOST = activeConnection.host;
-        env.TIDB_ACTIVE_DB_PORT = activeConnection.port;
-        env.TIDB_ACTIVE_DB_USER = activeConnection.user;
-        env.TIDB_ACTIVE_DB_NAME = activeConnection.dbName;
-        env.TIDB_ACTIVE_DB_TLS = activeConnection.useTLS ? "1" : "0";
+        env.VELODECK_ACTIVE_DB_HOST = activeConnection.host;
+        env.VELODECK_ACTIVE_DB_PORT = activeConnection.port;
+        env.VELODECK_ACTIVE_DB_USER = activeConnection.user;
+        env.VELODECK_ACTIVE_DB_NAME = activeConnection.dbName;
+        env.VELODECK_ACTIVE_DB_TLS = activeConnection.useTLS ? "1" : "0";
         break;
       case "sqlite":
-        env.TIDB_ACTIVE_DB_HOST = "";
-        env.TIDB_ACTIVE_DB_PORT = "";
-        env.TIDB_ACTIVE_DB_USER = "";
-        env.TIDB_ACTIVE_DB_NAME = activeConnection.filePath;
-        env.TIDB_ACTIVE_DB_TLS = "0";
+        env.VELODECK_ACTIVE_DB_HOST = "";
+        env.VELODECK_ACTIVE_DB_PORT = "";
+        env.VELODECK_ACTIVE_DB_USER = "";
+        env.VELODECK_ACTIVE_DB_NAME = activeConnection.filePath;
+        env.VELODECK_ACTIVE_DB_TLS = "0";
         break;
       case "bigquery":
-        env.TIDB_ACTIVE_DB_HOST = "bigquery.googleapis.com";
-        env.TIDB_ACTIVE_DB_PORT = "443";
-        env.TIDB_ACTIVE_DB_USER = "";
-        env.TIDB_ACTIVE_DB_NAME = activeConnection.projectId;
-        env.TIDB_ACTIVE_DB_TLS = "1";
+        env.VELODECK_ACTIVE_DB_HOST = "bigquery.googleapis.com";
+        env.VELODECK_ACTIVE_DB_PORT = "443";
+        env.VELODECK_ACTIVE_DB_USER = "";
+        env.VELODECK_ACTIVE_DB_NAME = activeConnection.projectId;
+        env.VELODECK_ACTIVE_DB_TLS = "1";
         break;
       default:
-        env.TIDB_ACTIVE_DB_HOST = "";
-        env.TIDB_ACTIVE_DB_PORT = "";
-        env.TIDB_ACTIVE_DB_USER = "";
-        env.TIDB_ACTIVE_DB_NAME = "";
-        env.TIDB_ACTIVE_DB_TLS = "0";
+        env.VELODECK_ACTIVE_DB_HOST = "";
+        env.VELODECK_ACTIVE_DB_PORT = "";
+        env.VELODECK_ACTIVE_DB_USER = "";
+        env.VELODECK_ACTIVE_DB_NAME = "";
+        env.VELODECK_ACTIVE_DB_TLS = "0";
         break;
     }
 
