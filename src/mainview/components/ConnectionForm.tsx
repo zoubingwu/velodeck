@@ -16,6 +16,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 // Type definition for the connection details state
 type ConnectionFormState = Pick<
@@ -31,6 +36,65 @@ const initialFormState: ConnectionFormState = {
   dbName: "",
   useTLS: true,
 };
+
+const falseyTLSValues = new Set([
+  "0",
+  "false",
+  "no",
+  "off",
+  "disable",
+  "disabled",
+  "none",
+]);
+
+function parseConnectionString(connectionString: string): ConnectionFormState {
+  const input = connectionString.trim();
+  if (!input) {
+    throw new Error("Connection string cannot be empty.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error(
+      "Invalid URL format. Example: mysql://user:password@host:4000/dbname?tls=true",
+    );
+  }
+
+  if (!["mysql:", "mysql2:", "tidb:"].includes(parsed.protocol)) {
+    throw new Error(
+      "Unsupported protocol. Use mysql://, mysql2://, or tidb://",
+    );
+  }
+
+  if (!parsed.hostname) {
+    throw new Error("Connection URL must include a host.");
+  }
+
+  const tlsRaw =
+    parsed.searchParams.get("tls") ??
+    parsed.searchParams.get("ssl") ??
+    parsed.searchParams.get("ssl-mode") ??
+    parsed.searchParams.get("sslmode");
+
+  const tlsValue = tlsRaw?.trim().toLowerCase();
+  const useTLS =
+    tlsValue === undefined
+      ? parsed.hostname.includes(".tidbcloud.com")
+      : !falseyTLSValues.has(tlsValue);
+
+  const dbName = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+
+  return {
+    host: parsed.hostname,
+    port: parsed.port || initialFormState.port,
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password),
+    dbName,
+    useTLS,
+  };
+}
 
 // Add props to control open state and notify on save
 type ConnectionFormDialogProps = {
@@ -63,6 +127,8 @@ export function ConnectionFormDialog({
   const [connectionName, setConnectionName] = useState<string>(
     defaultValues?.name || "",
   );
+  const [connectionString, setConnectionString] = useState("");
+  const [isImportPopoverOpen, setIsImportPopoverOpen] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -70,6 +136,8 @@ export function ConnectionFormDialog({
     if (isOpen) {
       setFormState(defaultValues?.connection || initialFormState);
       setConnectionName(defaultValues?.name || "");
+      setConnectionString("");
+      setIsImportPopoverOpen(false);
       setIsTesting(false);
       setIsSaving(false);
     }
@@ -91,6 +159,25 @@ export function ConnectionFormDialog({
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setConnectionName(e.target.value);
+  };
+
+  const handleConnectionStringImport = () => {
+    try {
+      const parsed = parseConnectionString(connectionString);
+      setFormState((prev) => ({ ...prev, ...parsed }));
+      setConnectionString("");
+      setIsImportPopoverOpen(false);
+      toast.success("Connection URL imported", {
+        description: "Host, port, user, database, and TLS settings are filled.",
+      });
+    } catch (error: any) {
+      toast.error("Invalid Connection URL", {
+        description:
+          typeof error === "string"
+            ? error
+            : error?.message || "Could not parse connection URL.",
+      });
+    }
   };
 
   const handleTestConnection = async () => {
@@ -307,7 +394,59 @@ export function ConnectionFormDialog({
             </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:justify-end">
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Popover
+              open={isImportPopoverOpen}
+              onOpenChange={setIsImportPopoverOpen}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isTesting || isSaving}
+                >
+                  Import from URL
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-80 sm:w-[430px]">
+                <div className="space-y-3">
+                  <Label htmlFor="connectionString">Connection String</Label>
+                  <Input
+                    id="connectionString"
+                    name="connectionString"
+                    value={connectionString}
+                    onChange={(e) => setConnectionString(e.target.value)}
+                    placeholder="mysql://user:password@host:4000/dbname?tls=true"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleConnectionStringImport();
+                      }
+                    }}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setIsImportPopoverOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleConnectionStringImport}
+                      disabled={
+                        !connectionString.trim() || isTesting || isSaving
+                      }
+                    >
+                      Import
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
             <div className="flex gap-2">
               <DialogClose asChild>
                 <Button type="button" variant="ghost">
