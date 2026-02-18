@@ -1,14 +1,42 @@
 import { BrowserWindow, Updater, Utils } from "electrobun/bun";
 import { events } from "./events";
-import { logger } from "./services/logger-service";
 import { configService, createBunRPC } from "./rpc";
+import { logger } from "./services/logger-service";
 
 const APP_TITLE = "TiDB Desktop";
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 const PROD_VIEW_URL = "views://mainview/index.html";
+const DEFAULT_WINDOW_X = 200;
+const DEFAULT_WINDOW_Y = 200;
+const MIN_VISIBLE_X = 20;
+const MIN_VISIBLE_Y = 60;
+const MIN_WINDOW_WIDTH = 800;
+const MIN_WINDOW_HEIGHT = 560;
 
 let mainWindow: BrowserWindow<any> | null = null;
+
+function normalizeCoordinate(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+): number {
+  if (value === undefined || value === -1 || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return value < min ? fallback : value;
+}
+
+function normalizeSize(
+  value: number | undefined,
+  fallback: number,
+  min: number,
+): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return value < min ? fallback : value;
+}
 
 async function getMainViewUrl(): Promise<string> {
   const channel = await Updater.localInfo.channel();
@@ -33,6 +61,26 @@ async function createMainWindow(): Promise<void> {
 
   const windowSettings = configService.getWindowSettings();
   const url = await getMainViewUrl();
+  const frameX = normalizeCoordinate(
+    windowSettings.x,
+    DEFAULT_WINDOW_X,
+    MIN_VISIBLE_X,
+  );
+  const frameY = normalizeCoordinate(
+    windowSettings.y,
+    DEFAULT_WINDOW_Y,
+    MIN_VISIBLE_Y,
+  );
+  const frameWidth = normalizeSize(
+    windowSettings.width,
+    1024,
+    MIN_WINDOW_WIDTH,
+  );
+  const frameHeight = normalizeSize(
+    windowSettings.height,
+    768,
+    MIN_WINDOW_HEIGHT,
+  );
 
   const rpc = createBunRPC({
     isMaximised: () => Boolean(mainWindow?.isMaximized()),
@@ -48,24 +96,33 @@ async function createMainWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     title: APP_TITLE,
     url,
-    renderer: "cef",
-    titleBarStyle: "hidden",
-    transparent: false,
-    sandbox: false,
+    titleBarStyle: "default",
+    styleMask: {
+      Borderless: false,
+      Titled: true,
+      Closable: true,
+      Miniaturizable: true,
+      Resizable: true,
+      UnifiedTitleAndToolbar: false,
+      FullScreen: false,
+      FullSizeContentView: false,
+      UtilityWindow: false,
+      DocModalWindow: false,
+      NonactivatingPanel: false,
+      HUDWindow: false,
+    },
     frame: {
-      x:
-        windowSettings.x !== undefined && windowSettings.x !== -1
-          ? windowSettings.x
-          : 200,
-      y:
-        windowSettings.y !== undefined && windowSettings.y !== -1
-          ? windowSettings.y
-          : 200,
-      width: windowSettings.width || 1024,
-      height: windowSettings.height || 768,
+      x: frameX,
+      y: frameY,
+      width: frameWidth,
+      height: frameHeight,
     },
     rpc,
   });
+
+  logger.info(
+    `[window-debug] style=default frame=(${frameX},${frameY},${frameWidth},${frameHeight})`,
+  );
 
   events.attachWindow(mainWindow);
 

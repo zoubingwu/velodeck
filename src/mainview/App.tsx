@@ -1,10 +1,9 @@
-import MainDataView from "@/components/MainDataView";
-import TitleBar from "@/components/TitleBar";
-import WelcomeScreen from "@/components/WelcomeScreen";
-import { Disconnect, EventsOn } from "@/bridge";
 import { useMemoizedFn } from "ahooks";
 import { useEffect, useState } from "react";
 import type { services } from "@/bridge";
+import { Disconnect, EventsOn } from "@/bridge";
+import MainDataView from "@/components/MainDataView";
+import WelcomeScreen from "@/components/WelcomeScreen";
 
 type ViewState = "welcome" | "main";
 
@@ -21,13 +20,10 @@ function App() {
   );
 
   useEffect(() => {
-    const cleanupEstablished = EventsOn(
-      "connection:established",
-      (payload) => {
-        const details = payload as services.ConnectionDetails;
-        navigateToMain(details);
-      },
-    );
+    const cleanupEstablished = EventsOn("connection:established", (payload) => {
+      const details = payload as services.ConnectionDetails;
+      navigateToMain(details);
+    });
     const cleanupDisconnected = EventsOn("connection:disconnected", () => {
       handleDisconnect();
     });
@@ -63,18 +59,8 @@ function App() {
     }
   };
 
-  const connectionName = connectionDetails
-    ? connectionDetails?.name ||
-      `${connectionDetails?.user}@${connectionDetails?.host}:${connectionDetails?.port}`
-    : "";
-
-  const title = connectionName
-    ? `TiDB Desktop - ${connectionName}`
-    : "TiDB Desktop";
-
   return (
     <div id="App" className="h-screen w-screen flex flex-col">
-      <TitleBar title={title} />
       <div className="flex-grow overflow-auto">{renderView()}</div>
     </div>
   );

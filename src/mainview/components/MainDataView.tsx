@@ -69,7 +69,7 @@ const defaultTableDataParameters = {
   pageIndex: 0,
   serverFilters: [],
 };
-const TITLE_BAR_HEIGHT = 28;
+const TITLE_BAR_HEIGHT = 0;
 const FOOTER_HEIGHT = 40;
 const DEFAULT_DB_TREE_WIDTH = 240;
 const DEFAULT_AI_PANEL_WIDTH = 300;
