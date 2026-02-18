@@ -13,6 +13,9 @@ export const DEFAULT_WINDOW_HEIGHT = 768;
 export const DEFAULT_WINDOW_X = -1;
 export const DEFAULT_WINDOW_Y = -1;
 
+export type DatabaseKind = "mysql" | "postgres" | "sqlite" | "bigquery";
+export type NamespaceKind = "database" | "schema" | "attached_db" | "dataset";
+
 export interface NullString {
   String: string;
   Valid: boolean;
@@ -31,16 +34,82 @@ export interface WindowSettings {
   isMaximized?: boolean;
 }
 
-export interface ConnectionDetails {
+interface BaseConnectionDetails {
   id?: string;
   name?: string;
+  kind: DatabaseKind;
+  lastUsed?: string;
+}
+
+export interface MySQLConnectionDetails extends BaseConnectionDetails {
+  kind: "mysql";
   host: string;
   port: string;
   user: string;
   password: string;
   dbName: string;
   useTLS: boolean;
-  lastUsed?: string;
+}
+
+export interface PostgresConnectionDetails extends BaseConnectionDetails {
+  kind: "postgres";
+  host: string;
+  port: string;
+  user: string;
+  password: string;
+  dbName: string;
+  useTLS: boolean;
+}
+
+export interface SQLiteAttachedDatabase {
+  name: string;
+  filePath: string;
+}
+
+export interface SQLiteConnectionDetails extends BaseConnectionDetails {
+  kind: "sqlite";
+  filePath: string;
+  readOnly?: boolean;
+  attachedDatabases?: SQLiteAttachedDatabase[];
+}
+
+export type BigQueryAuthType =
+  | "service_account_json"
+  | "service_account_key_file"
+  | "application_default_credentials";
+
+export interface BigQueryConnectionDetails extends BaseConnectionDetails {
+  kind: "bigquery";
+  projectId: string;
+  location?: string;
+  authType: BigQueryAuthType;
+  serviceAccountJson?: string;
+  serviceAccountKeyFile?: string;
+}
+
+export type ConnectionDetails =
+  | MySQLConnectionDetails
+  | PostgresConnectionDetails
+  | SQLiteConnectionDetails
+  | BigQueryConnectionDetails;
+
+export interface AdapterCapabilities {
+  namespaceKind: NamespaceKind;
+  supportsTransactions: boolean;
+  supportsForeignKeys: boolean;
+  supportsIndexes: boolean;
+  supportsServerSideFilter: boolean;
+}
+
+export interface NamespaceRef {
+  namespaceName: string;
+  namespaceKind: NamespaceKind;
+}
+
+export interface TableRef {
+  namespaceName: string;
+  tableName: string;
+  tableType: "table" | "view";
 }
 
 export interface SQLResult {
@@ -119,6 +188,7 @@ export interface Table {
 
 export interface DatabaseMetadata {
   name: string;
+  namespaceKind: NamespaceKind;
   tables: Table[];
   graph?: Record<string, Edge[]>;
   dbComment?: string;
@@ -130,7 +200,7 @@ export interface ConnectionMetadata {
   connectionName: string;
   lastExtracted: string;
   version?: string;
-  databases: Record<string, DatabaseMetadata>;
+  namespaces: Record<string, DatabaseMetadata>;
 }
 
 export interface ConfigData {
@@ -148,11 +218,11 @@ export interface DescriptionTarget {
 export interface ExtractMetadataInput {
   connectionId?: string;
   force?: boolean;
-  dbName?: string;
+  namespaceName?: string;
 }
 
 export interface GetTableDataInput {
-  dbName: string;
+  namespaceName: string;
   tableName: string;
   limit: number;
   offset: number;
@@ -238,24 +308,72 @@ export const windowSettingsSchema = z.object({
   isMaximized: z.boolean().optional(),
 });
 
-export const connectionDetailsSchema = z.object({
+const baseConnectionSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
+  lastUsed: z.string().optional(),
+});
+
+export const mysqlConnectionDetailsSchema = baseConnectionSchema.extend({
+  kind: z.literal("mysql"),
   host: z.string(),
   port: z.string(),
   user: z.string(),
   password: z.string(),
   dbName: z.string(),
   useTLS: z.boolean(),
-  lastUsed: z.string().optional(),
 });
+
+export const postgresConnectionDetailsSchema = baseConnectionSchema.extend({
+  kind: z.literal("postgres"),
+  host: z.string(),
+  port: z.string(),
+  user: z.string(),
+  password: z.string(),
+  dbName: z.string(),
+  useTLS: z.boolean(),
+});
+
+export const sqliteConnectionDetailsSchema = baseConnectionSchema.extend({
+  kind: z.literal("sqlite"),
+  filePath: z.string(),
+  readOnly: z.boolean().optional(),
+  attachedDatabases: z
+    .array(
+      z.object({
+        name: z.string(),
+        filePath: z.string(),
+      }),
+    )
+    .optional(),
+});
+
+export const bigqueryConnectionDetailsSchema = baseConnectionSchema.extend({
+  kind: z.literal("bigquery"),
+  projectId: z.string(),
+  location: z.string().optional(),
+  authType: z.enum([
+    "service_account_json",
+    "service_account_key_file",
+    "application_default_credentials",
+  ]),
+  serviceAccountJson: z.string().optional(),
+  serviceAccountKeyFile: z.string().optional(),
+});
+
+export const connectionDetailsSchema = z.discriminatedUnion("kind", [
+  mysqlConnectionDetailsSchema,
+  postgresConnectionDetailsSchema,
+  sqliteConnectionDetailsSchema,
+  bigqueryConnectionDetailsSchema,
+]);
 
 export const executeSQLSchema = z.object({
   query: z.string().min(1),
 });
 
 export const listTablesSchema = z.object({
-  dbName: z.string().optional().default(""),
+  namespaceName: z.string().optional().default(""),
 });
 
 export const tableFilterSchema = z.object({
@@ -266,7 +384,7 @@ export const tableFilterSchema = z.object({
 });
 
 export const getTableDataSchema = z.object({
-  dbName: z.string(),
+  namespaceName: z.string(),
   tableName: z.string(),
   limit: z.number().int().positive(),
   offset: z.number().int().nonnegative(),
@@ -279,14 +397,14 @@ export const getTableDataSchema = z.object({
 });
 
 export const getTableSchemaSchema = z.object({
-  dbName: z.string(),
+  namespaceName: z.string(),
   tableName: z.string(),
 });
 
 export const extractMetadataSchema = z.object({
   connectionId: z.string().optional(),
   force: z.boolean().optional().default(false),
-  dbName: z.string().optional().default(""),
+  namespaceName: z.string().optional().default(""),
 });
 
 export const startAgentRunSchema = z.object({

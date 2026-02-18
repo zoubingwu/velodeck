@@ -18,13 +18,13 @@ import { events } from "./events";
 import { AgentBridgeService } from "./services/agent-bridge-service";
 import { AgentService } from "./services/agent-service";
 import { ConfigService } from "./services/config-service";
-import { DatabaseService } from "./services/db-service";
+import { DatabaseGatewayService } from "./services/database-gateway-service";
 import { logger } from "./services/logger-service";
 import { MetadataService } from "./services/metadata-service";
 import { SessionService } from "./services/session-service";
 
 export const configService = new ConfigService();
-export const databaseService = new DatabaseService();
+export const databaseService = new DatabaseGatewayService();
 export const metadataService = new MetadataService(
   configService,
   databaseService,
@@ -89,22 +89,7 @@ function assertActiveConnection(): {
 async function getVersionForConnection(
   details: ConnectionDetails,
 ): Promise<string> {
-  const result = await databaseService.executeSQL(details, "SELECT VERSION();");
-  const firstRow = result.rows?.[0];
-  if (!firstRow) {
-    throw new Error("no version information returned from database");
-  }
-
-  for (const value of Object.values(firstRow)) {
-    if (typeof value === "string" && value.length > 0) {
-      return value;
-    }
-    if (value !== null && value !== undefined) {
-      return String(value);
-    }
-  }
-
-  throw new Error("version information is empty");
+  return databaseService.getVersion(details);
 }
 
 async function attachVersion(
@@ -264,20 +249,32 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async ListDatabases(): Promise<string[]> {
+        async GetConnectionCapabilities() {
           try {
             const { details } = assertActiveConnection();
-            return await databaseService.listDatabases(details);
+            return databaseService.getCapabilities(details);
           } catch (error) {
-            throw toRpcError(error, "LIST_DATABASES_FAILED");
+            throw toRpcError(error, "GET_CAPABILITIES_FAILED");
           }
         },
 
-        async ListTables(payload: unknown): Promise<string[]> {
+        async ListNamespaces() {
           try {
-            const input = listTablesSchema.parse({ dbName: payload });
             const { details } = assertActiveConnection();
-            return await databaseService.listTables(details, input.dbName);
+            return await databaseService.listNamespaces(details);
+          } catch (error) {
+            throw toRpcError(error, "LIST_NAMESPACES_FAILED");
+          }
+        },
+
+        async ListTables(payload: unknown) {
+          try {
+            const input = listTablesSchema.parse({ namespaceName: payload });
+            const { details } = assertActiveConnection();
+            return await databaseService.listTables(
+              details,
+              input.namespaceName,
+            );
           } catch (error) {
             throw toRpcError(error, "LIST_TABLES_FAILED");
           }
@@ -287,14 +284,7 @@ export function createBunRPC(windowController: WindowController) {
           try {
             const input = getTableDataSchema.parse(payload);
             const { details } = assertActiveConnection();
-            return await databaseService.getTableData(
-              details,
-              input.dbName,
-              input.tableName,
-              input.limit,
-              input.offset,
-              input.filterParams,
-            );
+            return await databaseService.getTableData(details, input);
           } catch (error) {
             throw toRpcError(error, "GET_TABLE_DATA_FAILED");
           }
@@ -306,7 +296,7 @@ export function createBunRPC(windowController: WindowController) {
             const { details } = assertActiveConnection();
             return await databaseService.getTableSchema(
               details,
-              input.dbName,
+              input.namespaceName,
               input.tableName,
             );
           } catch (error) {
@@ -358,7 +348,7 @@ export function createBunRPC(windowController: WindowController) {
             if (input.force) {
               metadata = await metadataService.extractMetadata(
                 connectionId,
-                input.dbName || "",
+                input.namespaceName || "",
               );
               metadataService.saveMetadata(connectionId);
             } else {

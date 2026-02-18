@@ -166,11 +166,48 @@ export class AgentService {
 
     env.TIDB_AGENT_BRIDGE_URL = this.bridgeService.getBaseURL();
     env.TIDB_AGENT_BRIDGE_TOKEN = bridgeToken;
-    env.TIDB_ACTIVE_DB_HOST = activeConnection?.host || "";
-    env.TIDB_ACTIVE_DB_PORT = activeConnection?.port || "";
-    env.TIDB_ACTIVE_DB_USER = activeConnection?.user || "";
-    env.TIDB_ACTIVE_DB_NAME = activeConnection?.dbName || "";
-    env.TIDB_ACTIVE_DB_TLS = activeConnection?.useTLS ? "1" : "0";
+    env.TIDB_ACTIVE_DB_KIND = activeConnection?.kind || "";
+
+    if (!activeConnection) {
+      env.TIDB_ACTIVE_DB_HOST = "";
+      env.TIDB_ACTIVE_DB_PORT = "";
+      env.TIDB_ACTIVE_DB_USER = "";
+      env.TIDB_ACTIVE_DB_NAME = "";
+      env.TIDB_ACTIVE_DB_TLS = "0";
+      return env;
+    }
+
+    switch (activeConnection.kind) {
+      case "mysql":
+      case "postgres":
+        env.TIDB_ACTIVE_DB_HOST = activeConnection.host;
+        env.TIDB_ACTIVE_DB_PORT = activeConnection.port;
+        env.TIDB_ACTIVE_DB_USER = activeConnection.user;
+        env.TIDB_ACTIVE_DB_NAME = activeConnection.dbName;
+        env.TIDB_ACTIVE_DB_TLS = activeConnection.useTLS ? "1" : "0";
+        break;
+      case "sqlite":
+        env.TIDB_ACTIVE_DB_HOST = "";
+        env.TIDB_ACTIVE_DB_PORT = "";
+        env.TIDB_ACTIVE_DB_USER = "";
+        env.TIDB_ACTIVE_DB_NAME = activeConnection.filePath;
+        env.TIDB_ACTIVE_DB_TLS = "0";
+        break;
+      case "bigquery":
+        env.TIDB_ACTIVE_DB_HOST = "bigquery.googleapis.com";
+        env.TIDB_ACTIVE_DB_PORT = "443";
+        env.TIDB_ACTIVE_DB_USER = "";
+        env.TIDB_ACTIVE_DB_NAME = activeConnection.projectId;
+        env.TIDB_ACTIVE_DB_TLS = "1";
+        break;
+      default:
+        env.TIDB_ACTIVE_DB_HOST = "";
+        env.TIDB_ACTIVE_DB_PORT = "";
+        env.TIDB_ACTIVE_DB_USER = "";
+        env.TIDB_ACTIVE_DB_NAME = "";
+        env.TIDB_ACTIVE_DB_TLS = "0";
+        break;
+    }
 
     return env;
   }

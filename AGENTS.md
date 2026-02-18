@@ -3,7 +3,7 @@
 ## Runtime
 
 - Desktop shell: Electrobun (`/Users/zou/workspace/tidb-desktop/src/bun/index.ts`)
-- Backend services: Bun + TypeScript (`/Users/zou/workspace/tidb-desktop/src/bun/services`)
+- Backend services: Bun + TypeScript with adapter-based multi-database gateway (`/Users/zou/workspace/tidb-desktop/src/bun/services`)
 - Frontend: React + Vite (`/Users/zou/workspace/tidb-desktop/src/mainview`)
 - Shared contracts: `/Users/zou/workspace/tidb-desktop/src/shared/contracts.ts`
 
@@ -32,7 +32,13 @@
 - `/Users/zou/workspace/tidb-desktop/src/bun/index.ts`: window lifecycle and app bootstrap
 - `/Users/zou/workspace/tidb-desktop/src/bun/events.ts`: event forwarding to renderer
 - `/Users/zou/workspace/tidb-desktop/src/bun/services/config-service.ts`: config and user settings
-- `/Users/zou/workspace/tidb-desktop/src/bun/services/db-service.ts`: SQL execution and schema/data APIs
+- `/Users/zou/workspace/tidb-desktop/src/bun/services/database-gateway-service.ts`: adapter routing, capability exposure, SQL/schema/data APIs
+- `/Users/zou/workspace/tidb-desktop/src/bun/services/db-adapters/types.ts`: adapter contracts
+- `/Users/zou/workspace/tidb-desktop/src/bun/services/db-adapters/registry.ts`: adapter registration and lookup
+- `/Users/zou/workspace/tidb-desktop/src/bun/services/db-adapters/mysql-adapter.ts`: MySQL/TiDB adapter implementation
+- `/Users/zou/workspace/tidb-desktop/src/bun/services/db-adapters/postgres-adapter.ts`: PostgreSQL adapter implementation
+- `/Users/zou/workspace/tidb-desktop/src/bun/services/db-adapters/sqlite-adapter.ts`: SQLite adapter implementation
+- `/Users/zou/workspace/tidb-desktop/src/bun/services/db-adapters/bigquery-adapter.ts`: BigQuery adapter implementation
 - `/Users/zou/workspace/tidb-desktop/src/bun/services/metadata-service.ts`: metadata extraction and persistence
 - `/Users/zou/workspace/tidb-desktop/src/bun/services/session-service.ts`: active connection state
 - `/Users/zou/workspace/tidb-desktop/src/bun/services/logger-service.ts`: file + stderr logging

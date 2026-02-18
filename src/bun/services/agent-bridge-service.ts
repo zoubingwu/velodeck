@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { DatabaseService } from "./db-service";
+import type { DatabaseGatewayService } from "./database-gateway-service";
 import { logger } from "./logger-service";
 import type { SessionService } from "./session-service";
 
@@ -55,7 +55,7 @@ export class AgentBridgeService {
 
   constructor(
     private readonly sessionService: SessionService,
-    private readonly databaseService: DatabaseService,
+    private readonly databaseService: DatabaseGatewayService,
   ) {}
 
   getBaseURL(): string {
