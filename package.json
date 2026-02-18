@@ -6,9 +6,9 @@
   "main": "src/index.ts",
   "description": "TiDB Desktop migrated to Electrobun + Bun",
   "scripts": {
-    "dev": "bun run build:web && electrobun dev",
+    "dev": "bun run build && electrobun dev",
     "dev:hmr": "concurrently \"bun run hmr\" \"bun run dev\"",
-    "hmr": "vite --port 5173 --strictPort",
+    "hmr": "vite --port 5173",
     "build:web": "vite build",
     "build": "vite build && electrobun build",
     "build:mac": "vite build && electrobun build --mac",
