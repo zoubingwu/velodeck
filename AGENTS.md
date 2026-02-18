@@ -46,3 +46,9 @@
 
 - Wails runtime and generated `wailsjs` bindings
 - Go backend (`main.go`, `app.go`, `services/*`, `go.mod`, `go.sum`)
+
+## Quality Gates
+
+- For every future code change, both checks must pass before commit:
+  - `bun run typecheck`
+  - `bun run lint`
