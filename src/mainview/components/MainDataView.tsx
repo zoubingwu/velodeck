@@ -3,6 +3,15 @@ import { DataTablePagination } from "@/components/DataTablePagination";
 import { DatabaseTree, DatabaseTreeItem } from "@/components/DatabaseTree";
 import { Button } from "@/components/ui/button";
 import {
+  EventsOn,
+  ExecuteSQL,
+  ExtractDatabaseMetadata,
+  GetDatabaseMetadata,
+  GetTableData,
+  ListDatabases,
+  ListTables,
+} from "@/bridge";
+import {
   DataTableFilter,
   ServerSideFilter,
 } from "@/components/ui/data-table-filter";
@@ -41,15 +50,7 @@ import { Loader, SettingsIcon, SparkleIcon, UnplugIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useImmer } from "use-immer";
-import {
-  ExecuteSQL,
-  GetDatabaseMetadata,
-  GetTableData,
-  ListDatabases,
-  ListTables,
-} from "wailsjs/go/main/App";
-import { services } from "wailsjs/go/models";
-import { EventsEmit, EventsOn } from "wailsjs/runtime";
+import type { services } from "@/bridge";
 import DataTable from "./DataTable";
 import SettingsModal from "./SettingModal";
 import TablePlaceholder from "./TablePlaceHolder";
@@ -225,22 +226,36 @@ const MainDataView = ({
     indexStartedRef.current = true;
 
     appendActivityLog("Indexing database...");
-    EventsEmit(
-      "metadata:extraction:start",
-      connectionDetails?.id!,
+    const connectionId = connectionDetails?.id;
+    if (!connectionId) {
+      appendActivityLog("Indexing skipped: no active connection.");
+      return;
+    }
+
+    void ExtractDatabaseMetadata({
+      connectionId,
       force,
-      dbName ?? "",
-    );
+      dbName: dbName ?? "",
+    }).catch((error) => {
+      const message =
+        error instanceof Error ? error.message : String(error ?? "unknown");
+      appendActivityLog(`Indexing database failed: ${message}`);
+    });
   });
 
   useEffect(() => {
-    const cleanup1 = EventsOn("metadata:extraction:failed", (error: string) => {
+    const cleanup1 = EventsOn("metadata:extraction:failed", (payload) => {
+      const error =
+        typeof payload === "string"
+          ? payload
+          : String(payload ?? "unknown error");
       appendActivityLog(`Indexing database failed: ${error}`);
     });
 
     const cleanup2 = EventsOn(
       "metadata:extraction:completed",
-      async (metadata: services.ConnectionMetadata) => {
+      async (payload) => {
+        const metadata = payload as services.ConnectionMetadata;
         appendActivityLog("Indexing database completed.");
         if (metadata.version) {
           appendActivityLog(`Connected to ${metadata.version}`);

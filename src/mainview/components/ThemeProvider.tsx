@@ -1,3 +1,4 @@
+import { GetThemeSettings, SaveThemeSettings } from "@/bridge";
 import { useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
@@ -6,7 +7,6 @@ import {
   useEffect,
   useState,
 } from "react";
-import { GetThemeSettings, SaveThemeSettings } from "wailsjs/go/main/App";
 
 // Define the available theme names. These should match CSS classes.
 // These are the *base* themes you switch between.

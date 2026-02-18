@@ -1,11 +1,10 @@
 import MainDataView from "@/components/MainDataView";
 import TitleBar from "@/components/TitleBar";
 import WelcomeScreen from "@/components/WelcomeScreen";
+import { Disconnect, EventsOn } from "@/bridge";
 import { useMemoizedFn } from "ahooks";
 import { useEffect, useState } from "react";
-import { Disconnect } from "wailsjs/go/main/App";
-import { services } from "wailsjs/go/models";
-import { EventsOn } from "wailsjs/runtime";
+import type { services } from "@/bridge";
 
 type ViewState = "welcome" | "main";
 
@@ -24,7 +23,8 @@ function App() {
   useEffect(() => {
     const cleanupEstablished = EventsOn(
       "connection:established",
-      (details: services.ConnectionDetails) => {
+      (payload) => {
+        const details = payload as services.ConnectionDetails;
         navigateToMain(details);
       },
     );

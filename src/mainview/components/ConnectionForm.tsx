@@ -1,6 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  ClipboardGetText,
+  SaveConnection,
+  TestConnection,
+} from "@/bridge";
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -15,9 +20,7 @@ import { inferConnectionDetails } from "@/lib/ai";
 import { Loader } from "lucide-react";
 import React, { FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { SaveConnection, TestConnection } from "wailsjs/go/main/App";
-import { services } from "wailsjs/go/models";
-import { ClipboardGetText } from "wailsjs/runtime/runtime";
+import type { services } from "@/bridge";
 
 // Type definition for the connection details state
 type ConnectionFormState = Pick<

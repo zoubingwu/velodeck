@@ -1,4 +1,8 @@
 import {
+  GetAIProviderSettings,
+  SaveAIProviderSettings,
+} from "@/bridge";
+import {
   type ThemeMode,
   availableThemes,
   useTheme,
@@ -31,11 +35,7 @@ import { Loader } from "lucide-react";
 import { memo, useState } from "react";
 import { toast } from "sonner";
 import { useImmer } from "use-immer";
-import {
-  GetAIProviderSettings,
-  SaveAIProviderSettings,
-} from "wailsjs/go/main/App";
-import { services } from "wailsjs/go/models";
+import type { services } from "@/bridge";
 
 // Local types mirroring the *data structure* of Go types, excluding methods
 type LocalOpenAISettings = Pick<

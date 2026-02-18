@@ -29,8 +29,8 @@ import Markdown from "react-markdown";
 import TextareaAutosize from "react-textarea-autosize";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
-import { services } from "wailsjs/go/models";
 import { z } from "zod";
+import type { services } from "@/bridge";
 
 // Expanded message type to better represent stream states
 type DisplayBlock = {

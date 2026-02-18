@@ -2,6 +2,13 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
+  ExecuteSQL,
+  GetAIProviderSettings,
+  GetDatabaseMetadata,
+  GetVersion,
+  UpdateAIDescription,
+} from "@/bridge";
+import {
   type CoreMessage,
   type Tool,
   type ToolCallPart,
@@ -11,15 +18,8 @@ import {
   streamText,
   tool,
 } from "ai";
-import {
-  ExecuteSQL,
-  GetAIProviderSettings,
-  GetDatabaseMetadata,
-  GetVersion,
-  UpdateAIDescription,
-} from "wailsjs/go/main/App";
-import { services } from "wailsjs/go/models";
 import { z } from "zod";
+import type { services } from "@/bridge";
 
 export const AVAILABLE_MODELS = {
   openai: [

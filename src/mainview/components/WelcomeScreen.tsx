@@ -1,16 +1,16 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import {
+  ConnectUsingSaved,
+  DeleteSavedConnection,
+  ListSavedConnections,
+} from "@/bridge";
 import { useMount } from "ahooks";
 import { formatDistanceToNow } from "date-fns";
 import { Loader, PlusCircleIcon, SettingsIcon } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  ConnectUsingSaved,
-  DeleteSavedConnection,
-  ListSavedConnections,
-} from "wailsjs/go/main/App";
-import { services } from "wailsjs/go/models";
+import type { services } from "@/bridge";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectionFormDialog } from "./ConnectionForm";
 import SettingsModal from "./SettingModal";

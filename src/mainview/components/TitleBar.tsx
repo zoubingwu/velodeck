@@ -1,9 +1,9 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import {
   WindowIsMaximised,
   WindowMaximise,
   WindowUnmaximise,
-} from "wailsjs/runtime";
+} from "@/bridge";
 
 function TitleBar({ title }: { title: string }) {
   const onDoubleClick = async () => {
@@ -16,8 +16,7 @@ function TitleBar({ title }: { title: string }) {
   return (
     <div
       onDoubleClick={onDoubleClick}
-      className="h-[28px] bg-[var(--card)] text-[var(--card-foreground)] flex justify-center items-center select-none text-xs border-b border-[var(--muted)]/30 flex-shrink-0"
-      style={{ "--wails-draggable": "drag" } as React.CSSProperties}
+      className="h-[28px] bg-[var(--card)] text-[var(--card-foreground)] flex justify-center items-center select-none text-xs border-b border-[var(--muted)]/30 flex-shrink-0 electrobun-webkit-app-region-drag"
     >
       <div className="flex items-center gap-2">
         <span className="font-medium">{title}</span>
