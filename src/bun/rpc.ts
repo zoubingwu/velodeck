@@ -3,18 +3,20 @@ import {
   APP_EVENTS,
   type AppRpcError,
   type ConnectionDetails,
-  aiProviderSettingsSchema,
+  cancelAgentRunSchema,
   connectionDetailsSchema,
   executeSQLSchema,
   extractMetadataSchema,
   getTableDataSchema,
   getTableSchemaSchema,
   listTablesSchema,
+  startAgentRunSchema,
   themeSettingsSchema,
-  updateAIDescriptionSchema,
   windowSettingsSchema,
 } from "../shared/contracts";
 import { events } from "./events";
+import { AgentBridgeService } from "./services/agent-bridge-service";
+import { AgentService } from "./services/agent-service";
 import { ConfigService } from "./services/config-service";
 import { DatabaseService } from "./services/db-service";
 import { logger } from "./services/logger-service";
@@ -23,8 +25,20 @@ import { SessionService } from "./services/session-service";
 
 export const configService = new ConfigService();
 export const databaseService = new DatabaseService();
-export const metadataService = new MetadataService(configService, databaseService);
+export const metadataService = new MetadataService(
+  configService,
+  databaseService,
+);
 export const sessionService = new SessionService();
+export const agentBridgeService = new AgentBridgeService(
+  sessionService,
+  databaseService,
+);
+export const agentService = new AgentService(
+  events,
+  agentBridgeService,
+  sessionService,
+);
 
 export type WindowController = {
   isMaximised: () => boolean;
@@ -33,7 +47,10 @@ export type WindowController = {
   readClipboardText: () => string;
 };
 
-function toRpcError(error: unknown, fallbackCode = "INTERNAL_ERROR"): AppRpcError {
+function toRpcError(
+  error: unknown,
+  fallbackCode = "INTERNAL_ERROR",
+): AppRpcError {
   if (
     error &&
     typeof error === "object" &&
@@ -58,7 +75,10 @@ function toRpcError(error: unknown, fallbackCode = "INTERNAL_ERROR"): AppRpcErro
   };
 }
 
-function assertActiveConnection(): { connectionId: string; details: ConnectionDetails } {
+function assertActiveConnection(): {
+  connectionId: string;
+  details: ConnectionDetails;
+} {
   const { id, details } = sessionService.ensureActiveConnection();
   return {
     connectionId: id,
@@ -66,7 +86,9 @@ function assertActiveConnection(): { connectionId: string; details: ConnectionDe
   };
 }
 
-async function getVersionForConnection(details: ConnectionDetails): Promise<string> {
+async function getVersionForConnection(
+  details: ConnectionDetails,
+): Promise<string> {
   const result = await databaseService.executeSQL(details, "SELECT VERSION();");
   const firstRow = result.rows?.[0];
   if (!firstRow) {
@@ -119,6 +141,7 @@ function requireConnectionId(inputConnectionId?: string): string {
 }
 
 function disconnectCurrentSession(): void {
+  agentService.cancelAllRuns();
   sessionService.clearActiveConnection();
   void events.emit(APP_EVENTS.connectionDisconnected, null);
 }
@@ -136,13 +159,16 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async ConnectUsingSaved(connectionId: unknown): Promise<ConnectionDetails> {
+        async ConnectUsingSaved(
+          connectionId: unknown,
+        ): Promise<ConnectionDetails> {
           try {
             if (typeof connectionId !== "string" || !connectionId.trim()) {
               throw new Error("connection ID cannot be empty");
             }
 
-            const { details, found } = configService.getConnection(connectionId);
+            const { details, found } =
+              configService.getConnection(connectionId);
             if (!found) {
               throw new Error(`saved connection '${connectionId}' not found`);
             }
@@ -155,7 +181,10 @@ export function createBunRPC(windowController: WindowController) {
               const metadata = metadataService.loadMetadata(connectionId);
               if (metadata.lastExtracted) {
                 await attachVersion(connectionId, metadata);
-                await events.emit(APP_EVENTS.metadataExtractionCompleted, metadata);
+                await events.emit(
+                  APP_EVENTS.metadataExtractionCompleted,
+                  metadata,
+                );
               }
             } catch (metadataError) {
               await events.emit(
@@ -186,7 +215,9 @@ export function createBunRPC(windowController: WindowController) {
           return sessionService.getActiveConnection();
         },
 
-        async ListSavedConnections(): Promise<Record<string, ConnectionDetails>> {
+        async ListSavedConnections(): Promise<
+          Record<string, ConnectionDetails>
+        > {
           return configService.getAllConnections();
         },
 
@@ -298,19 +329,6 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async GetAIProviderSettings() {
-          return configService.getAIProviderSettings();
-        },
-
-        async SaveAIProviderSettings(payload: unknown): Promise<void> {
-          try {
-            const settings = aiProviderSettingsSchema.parse(payload);
-            configService.saveAIProviderSettings(settings);
-          } catch (error) {
-            throw toRpcError(error, "SAVE_AI_SETTINGS_FAILED");
-          }
-        },
-
         async GetWindowSettings() {
           return configService.getWindowSettings();
         },
@@ -340,7 +358,10 @@ export function createBunRPC(windowController: WindowController) {
 
             let metadata;
             if (input.force) {
-              metadata = await metadataService.extractMetadata(connectionId, input.dbName || "");
+              metadata = await metadataService.extractMetadata(
+                connectionId,
+                input.dbName || "",
+              );
               metadataService.saveMetadata(connectionId);
             } else {
               metadata = metadataService.getMetadata(connectionId);
@@ -351,29 +372,33 @@ export function createBunRPC(windowController: WindowController) {
             return metadata;
           } catch (error) {
             const rpcError = toRpcError(error, "EXTRACT_METADATA_FAILED");
-            await events.emit(APP_EVENTS.metadataExtractionFailed, rpcError.message);
+            await events.emit(
+              APP_EVENTS.metadataExtractionFailed,
+              rpcError.message,
+            );
             throw rpcError;
           }
         },
 
-        async UpdateAIDescription(payload: unknown): Promise<void> {
+        async StartAgentRun(payload: unknown): Promise<{ runId: string }> {
           try {
-            const input = updateAIDescriptionSchema.parse(payload);
-            const { connectionId } = assertActiveConnection();
-
-            metadataService.updateAIDescription(
-              connectionId,
-              input.dbName,
-              {
-                type: input.targetType,
-                tableName: input.tableName,
-                columnName: input.columnName,
-              },
-              input.description,
-            );
-            metadataService.saveMetadata(connectionId);
+            const input = startAgentRunSchema.parse(payload);
+            const runId = await agentService.startRun(input.prompt);
+            return { runId };
           } catch (error) {
-            throw toRpcError(error, "UPDATE_AI_DESCRIPTION_FAILED");
+            throw toRpcError(error, "START_AGENT_RUN_FAILED");
+          }
+        },
+
+        async CancelAgentRun(payload: unknown): Promise<void> {
+          try {
+            const input = cancelAgentRunSchema.parse(payload);
+            const cancelled = agentService.cancelRun(input.runId);
+            if (!cancelled) {
+              throw new Error(`agent run '${input.runId}' not found`);
+            }
+          } catch (error) {
+            throw toRpcError(error, "CANCEL_AGENT_RUN_FAILED");
           }
         },
 

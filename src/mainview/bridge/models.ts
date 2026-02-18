@@ -1,6 +1,6 @@
 import type {
-  AIProviderSettings as SharedAIProviderSettings,
-  AnthropicSettings as SharedAnthropicSettings,
+  AgentRunEventPayload as SharedAgentRunEventPayload,
+  AgentRunStatusPayload as SharedAgentRunStatusPayload,
   Column as SharedColumn,
   ColumnSchema as SharedColumnSchema,
   ConnectionDetails as SharedConnectionDetails,
@@ -10,8 +10,6 @@ import type {
   ForeignKey as SharedForeignKey,
   Index as SharedIndex,
   NullString as SharedNullString,
-  OpenAISettings as SharedOpenAISettings,
-  OpenRouterSettings as SharedOpenRouterSettings,
   SQLResult as SharedSQLResult,
   Table as SharedTable,
   TableColumn as SharedTableColumn,
@@ -22,11 +20,6 @@ import type {
 } from "@shared/contracts";
 
 export namespace services {
-  export type OpenRouterSettings = SharedOpenRouterSettings;
-  export type AnthropicSettings = SharedAnthropicSettings;
-  export type OpenAISettings = SharedOpenAISettings;
-  export type AIProviderSettings = SharedAIProviderSettings;
-
   export type Column = SharedColumn;
   export type ColumnSchema = SharedColumnSchema;
   export type ConnectionDetails = SharedConnectionDetails;
@@ -43,6 +36,8 @@ export namespace services {
   export type TableSchema = SharedTableSchema;
   export type ThemeSettings = SharedThemeSettings;
   export type WindowSettings = SharedWindowSettings;
+  export type AgentRunEventPayload = SharedAgentRunEventPayload;
+  export type AgentRunStatusPayload = SharedAgentRunStatusPayload;
 }
 
 export namespace sql {

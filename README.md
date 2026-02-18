@@ -1,6 +1,6 @@
 ## About
 
-TiDB Desktop is a modern lightweight TiDB/MySQL client with a built-in AI agent.
+TiDB Desktop is a modern lightweight TiDB/MySQL client with an external Codex CLI agent.
 
 ![screenshot](./screenshot.gif)
 
@@ -65,3 +65,5 @@ bun run build
 
 - Window size/position are persisted on close.
 - Connection/session, metadata extraction, and app events are bridged through Electrobun RPC.
+- Agent runs are executed via local `codex exec --json`.
+- Agent skills are bootstrapped under `~/.tidb-desktop/.agents/skills`.

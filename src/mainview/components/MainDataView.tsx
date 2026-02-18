@@ -1,16 +1,28 @@
-import { AIPanel } from "@/components/AIPanel";
-import { DataTablePagination } from "@/components/DataTablePagination";
-import { DatabaseTree, DatabaseTreeItem } from "@/components/DatabaseTree";
-import { Button } from "@/components/ui/button";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import {
+  CellContext,
+  ColumnDef,
+  getCoreRowModel,
+  getPaginationRowModel,
+  PaginationState,
+  Table as ReactTable,
+  Updater,
+  useReactTable,
+} from "@tanstack/react-table";
+import { useLocalStorageState, useMemoizedFn } from "ahooks";
+import { Allotment as ReactSplitView } from "allotment";
 import {
   EventsOn,
-  ExecuteSQL,
   ExtractDatabaseMetadata,
   GetDatabaseMetadata,
   GetTableData,
   ListDatabases,
   ListTables,
 } from "@/bridge";
+import { AIPanel } from "@/components/AIPanel";
+import { DatabaseTree, DatabaseTreeItem } from "@/components/DatabaseTree";
+import { DataTablePagination } from "@/components/DataTablePagination";
+import { Button } from "@/components/ui/button";
 import {
   DataTableFilter,
   ServerSideFilter,
@@ -27,24 +39,6 @@ import {
   isSystemDatabase,
   mapDbColumnTypeToFilterType,
 } from "@/lib/utils";
-import {
-  keepPreviousData,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import {
-  CellContext,
-  ColumnDef,
-  PaginationState,
-  Table as ReactTable,
-  Updater,
-  getCoreRowModel,
-  getPaginationRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
-import { useLocalStorageState, useMemoizedFn } from "ahooks";
-import { Allotment as ReactSplitView } from "allotment";
 import "allotment/dist/style.css"; // for 3 column split view
 import { Loader, SettingsIcon, SparkleIcon, UnplugIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -89,7 +83,6 @@ const MainDataView = ({
   onClose: () => void;
   connectionDetails: services.ConnectionDetails | null;
 }) => {
-  const queryClient = useQueryClient();
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [databaseTree, setDatabaseTree] = useImmer<DatabaseTreeData>([]);
   const [tableDataPrameters, setTableDataPrameters] = useImmer<{
@@ -105,15 +98,9 @@ const MainDataView = ({
   const currentPageIndex = tableDataPrameters.pageIndex;
   const currentServerFilters = tableDataPrameters.serverFilters;
 
-  const resetTableDataPrameters = useMemoizedFn(() => {
-    setTableDataPrameters(defaultTableDataParameters);
-  });
-
   const appendActivityLog = useMemoizedFn((log: string) => {
     setActivityLog((prev) => [...prev, log]);
   });
-
-  const [sqlFromAI, setSqlFromAI] = useState<string>("");
 
   const [dbTreeWidth, setDbTreeWidth] = useLocalStorageState<number>(
     LAYOUT_DB_TREE_WIDTH_KEY,
@@ -297,11 +284,7 @@ const MainDataView = ({
   });
 
   // fetch from a specific table
-  const {
-    data: tableData,
-    isFetching: isFetchingTableData,
-    refetch: refetchTableData,
-  } = useQuery({
+  const { data: tableData, isFetching: isFetchingTableData } = useQuery({
     enabled: !!currentDb && !!currentTable,
     queryKey: [
       "tableData",
@@ -349,27 +332,6 @@ const MainDataView = ({
     placeholderData: keepPreviousData,
   });
 
-  const {
-    mutateAsync: executeSql,
-    data: sqlFromAIResult,
-    isPending: isExecutingSQLFromAI,
-    reset: resetSqlFromAIResult,
-  } = useMutation<services.SQLResult, Error, string>({
-    mutationFn: async (sqlToExecute: string) => {
-      try {
-        appendActivityLog("Running query...");
-        const res = await ExecuteSQL(sqlToExecute);
-        appendActivityLog(`Query OK`);
-
-        return res;
-      } catch (error: any) {
-        const errorMessage = error?.message || String(error);
-        appendActivityLog(`Query failed. ${errorMessage}`);
-        throw error;
-      }
-    },
-  });
-
   const handleFilterChange = useMemoizedFn((filters: ServerSideFilter[]) => {
     setTableDataPrameters((draft) => {
       draft.serverFilters = filters;
@@ -392,16 +354,6 @@ const MainDataView = ({
       return String(value).slice(0, 10000);
     };
 
-    if (sqlFromAI && sqlFromAIResult?.columns?.length) {
-      return sqlFromAIResult.columns.map((colName) => {
-        return {
-          accessorKey: colName,
-          header: colName,
-          cell: renderCell,
-        };
-      });
-    }
-
     if (tableData?.columns) {
       return [
         ...(tableData.columns.map((col): ColumnDef<TableRowData> => {
@@ -423,9 +375,9 @@ const MainDataView = ({
     }
 
     return [];
-  }, [tableData?.columns, sqlFromAIResult, sqlFromAI]);
+  }, [tableData?.columns]);
 
-  const totalRowCount = sqlFromAIResult ? null : tableData?.totalRows;
+  const totalRowCount = tableData?.totalRows;
 
   // --- Calculate pagination values ---
   const pagination = useMemo(
@@ -448,14 +400,11 @@ const MainDataView = ({
       return "init";
     }
 
-    if (isFetchingTableData || isExecutingSQLFromAI) {
+    if (isFetchingTableData) {
       return "loading";
     }
 
-    if (
-      (currentDb && currentTable && tableData?.columns?.length) ||
-      sqlFromAIResult
-    ) {
+    if (currentDb && currentTable && tableData?.columns?.length) {
       return "data";
     }
 
@@ -468,8 +417,6 @@ const MainDataView = ({
 
   const handleSelectTable = useMemoizedFn(
     (dbName: string, tableName: string) => {
-      setSqlFromAI("");
-      resetSqlFromAIResult();
       setTableDataPrameters((draft) => {
         draft.dbName = dbName;
         draft.tableName = tableName;
@@ -497,50 +444,9 @@ const MainDataView = ({
     onClose();
   });
 
-  const handleApplyAIGeneratedQuery = async (query: string, dbName: string) => {
-    const sqlQuery = query;
-    const upperSqlQuery = sqlQuery.toUpperCase();
-    const tableModifyingKeywords = [
-      "CREATE TABLE",
-      "ALTER TABLE",
-      "DROP TABLE",
-      "RENAME TABLE",
-    ];
-    const isModifyingQuery = tableModifyingKeywords.some((keyword) =>
-      upperSqlQuery.includes(keyword),
-    );
-
-    resetTableDataPrameters();
-    const result = await executeSql(sqlQuery);
-    setSqlFromAI(sqlQuery);
-
-    if (isModifyingQuery) {
-      fetchTables(dbName);
-      triggerIndexer(true, dbName);
-
-      if (
-        currentDb &&
-        currentTable &&
-        sqlQuery.includes(currentDb) &&
-        sqlQuery.includes(currentTable)
-      ) {
-        await queryClient.invalidateQueries({
-          queryKey: ["tableData", currentDb, currentTable],
-        });
-        refetchTableData();
-      }
-    }
-
-    return result;
-  };
-
   const data = useMemo(() => {
-    if (sqlFromAI && sqlFromAIResult) {
-      return sqlFromAIResult.rows ?? [];
-    }
-
     return tableData?.rows ?? [];
-  }, [sqlFromAI, sqlFromAIResult, tableData]);
+  }, [tableData]);
 
   const table: ReactTable<TableRowData> = useReactTable({
     data,
@@ -618,11 +524,7 @@ const MainDataView = ({
               preferredSize={aiPanelWidth ?? DEFAULT_AI_PANEL_WIDTH}
               maxSize={DEFAULT_AI_PANEL_WIDTH * 2}
             >
-              <AIPanel
-                onApplyQueryFromAI={handleApplyAIGeneratedQuery}
-                opened={showAIPanel}
-                isExecutingSQLFromAI={isExecutingSQLFromAI}
-              />
+              <AIPanel opened={showAIPanel} />
             </ReactSplitView.Pane>
           </ReactSplitView>
         </ReactSplitView.Pane>
@@ -662,28 +564,24 @@ const MainDataView = ({
           </div>
 
           <div className="flex flex-nowrap items-center gap-2">
-            {!sqlFromAI && (
-              <DataTablePagination
-                table={table}
-                totalRowCount={totalRowCount}
-                disabled={tableViewState !== "data"}
-                loading={tableViewState === "loading"}
-              />
-            )}
+            <DataTablePagination
+              table={table}
+              totalRowCount={totalRowCount}
+              disabled={tableViewState !== "data"}
+              loading={tableViewState === "loading"}
+            />
 
             <div className="flex gap-2">
-              {!sqlFromAI && (
-                <Tooltip>
-                  <DataTableFilter
-                    table={table}
-                    onChange={handleFilterChange}
-                    disabled={tableViewState !== "data"}
-                  />
-                  <TooltipContent>
-                    <p>Filter</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
+              <Tooltip>
+                <DataTableFilter
+                  table={table}
+                  onChange={handleFilterChange}
+                  disabled={tableViewState !== "data"}
+                />
+                <TooltipContent>
+                  <p>Filter</p>
+                </TooltipContent>
+              </Tooltip>
 
               <Tooltip>
                 <TooltipTrigger asChild>

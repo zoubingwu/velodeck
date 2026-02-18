@@ -1,10 +1,10 @@
+import { Loader } from "lucide-react";
+import React, { FormEvent, useEffect, useState } from "react";
+import { toast } from "sonner";
+import type { services } from "@/bridge";
+import { SaveConnection, TestConnection } from "@/bridge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  ClipboardGetText,
-  SaveConnection,
-  TestConnection,
-} from "@/bridge";
 import {
   Dialog,
   DialogClose,
@@ -16,11 +16,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { inferConnectionDetails } from "@/lib/ai";
-import { Loader } from "lucide-react";
-import React, { FormEvent, useEffect, useState } from "react";
-import { toast } from "sonner";
-import type { services } from "@/bridge";
 
 // Type definition for the connection details state
 type ConnectionFormState = Pick<
@@ -70,7 +65,6 @@ export function ConnectionFormDialog({
   );
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isInferring, setIsInferring] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -78,7 +72,6 @@ export function ConnectionFormDialog({
       setConnectionName(defaultValues?.name || "");
       setIsTesting(false);
       setIsSaving(false);
-      setIsInferring(false);
     }
   }, [isOpen, defaultValues]);
 
@@ -186,55 +179,6 @@ export function ConnectionFormDialog({
       });
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleReadFromClipboard = async () => {
-    setIsInferring(true);
-    try {
-      const textFromClipboard = await ClipboardGetText();
-      if (!textFromClipboard) {
-        toast.info("Clipboard Empty", {
-          description: "There was no text content found on the clipboard.",
-        });
-        return;
-      }
-
-      const inferredDetails = await inferConnectionDetails(textFromClipboard);
-      if (
-        inferredDetails &&
-        inferredDetails.host &&
-        inferredDetails.port &&
-        inferredDetails.user &&
-        inferredDetails.password
-      ) {
-        setFormState((prev) => {
-          return { ...prev, ...inferredDetails };
-        });
-        if (inferredDetails.host && !connectionName) {
-          const suggestedName = `${inferredDetails.user || "user"}@${inferredDetails.host.split(".")[0]}`;
-          setConnectionName(suggestedName);
-        }
-        toast.success("Details Loaded from Clipboard", {
-          description:
-            "Form updated from clipboard. Please verify and name the connection.",
-        });
-      } else {
-        toast.error("Could Not Extract Details", {
-          description:
-            "Could not extract all required connection details from the clipboard content.",
-        });
-      }
-    } catch (error: any) {
-      toast.error("Error Reading Clipboard", {
-        description:
-          typeof error === "string"
-            ? error
-            : error?.message ||
-              "Could not read or extract details from clipboard.",
-      });
-    } finally {
-      setIsInferring(false);
     }
   };
 
@@ -363,16 +307,7 @@ export function ConnectionFormDialog({
             </div>
           </div>
 
-          <DialogFooter className="gap-2 sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleReadFromClipboard}
-              disabled={isTesting || isSaving || isInferring}
-            >
-              {isInferring && <Loader className="h-4 w-4 animate-spin" />}
-              {isInferring ? "Reading Clipboard..." : "Read from Clipboard"}
-            </Button>
+          <DialogFooter className="gap-2 sm:justify-end">
             <div className="flex gap-2">
               <DialogClose asChild>
                 <Button type="button" variant="ghost">
@@ -383,18 +318,14 @@ export function ConnectionFormDialog({
                 type="button"
                 variant="secondary"
                 onClick={handleTestConnection}
-                disabled={
-                  isTesting || isSaving || isInferring || !formState.host
-                }
+                disabled={isTesting || isSaving || !formState.host}
               >
                 {isTesting && <Loader className="h-4 w-4 animate-spin" />}
                 {isTesting ? "Testing..." : "Test"}
               </Button>
               <Button
                 type="submit"
-                disabled={
-                  isTesting || isSaving || isInferring || !connectionName.trim()
-                }
+                disabled={isTesting || isSaving || !connectionName.trim()}
               >
                 {isSaving && <Loader className="h-4 w-4 animate-spin" />}
                 {isSaving ? "Saving..." : "Save"}

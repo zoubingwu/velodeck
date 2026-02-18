@@ -3,13 +3,11 @@ import { z } from "zod";
 export const CONFIG_DIR_NAME = ".tidb-desktop";
 export const CONFIG_FILE_NAME = "config.json";
 export const METADATA_DIR_NAME = "metadata";
+export const AGENT_DIR_NAME = ".agents";
+export const AGENT_SKILLS_DIR_NAME = "skills";
 
-export const DEFAULT_OPENAI_MODEL = "gpt-4o";
-export const DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest";
-export const DEFAULT_OPENROUTER_MODEL = "anthropic/claude-3.5-sonnet";
 export const DEFAULT_THEME_MODE = "system";
 export const DEFAULT_BASE_THEME = "solar-dusk";
-export const DEFAULT_AI_PROVIDER = "openai";
 export const DEFAULT_WINDOW_WIDTH = 1024;
 export const DEFAULT_WINDOW_HEIGHT = 768;
 export const DEFAULT_WINDOW_X = -1;
@@ -25,36 +23,12 @@ export interface ThemeSettings {
   baseTheme: string;
 }
 
-export interface OpenAISettings {
-  apiKey?: string;
-  baseURL?: string;
-  model?: string;
-}
-
-export interface AnthropicSettings {
-  apiKey?: string;
-  baseURL?: string;
-  model?: string;
-}
-
-export interface OpenRouterSettings {
-  apiKey?: string;
-  model?: string;
-}
-
 export interface WindowSettings {
   width?: number;
   height?: number;
   x?: number;
   y?: number;
   isMaximized?: boolean;
-}
-
-export interface AIProviderSettings {
-  provider?: string;
-  openai?: OpenAISettings;
-  anthropic?: AnthropicSettings;
-  openrouter?: OpenRouterSettings;
 }
 
 export interface ConnectionDetails {
@@ -162,7 +136,6 @@ export interface ConnectionMetadata {
 export interface ConfigData {
   connections: Record<string, ConnectionDetails>;
   appearance?: ThemeSettings;
-  ai?: AIProviderSettings;
   window?: WindowSettings;
 }
 
@@ -188,14 +161,6 @@ export interface GetTableDataInput {
   } | null;
 }
 
-export interface UpdateAIDescriptionInput {
-  dbName: string;
-  targetType: "database" | "table" | "column";
-  tableName?: string;
-  columnName?: string;
-  description: string;
-}
-
 export interface ServerSideFilter {
   columnId: string;
   operator: string;
@@ -209,11 +174,44 @@ export interface AppRpcError {
   details?: unknown;
 }
 
+export interface StartAgentRunInput {
+  prompt: string;
+}
+
+export interface StartAgentRunOutput {
+  runId: string;
+}
+
+export interface CancelAgentRunInput {
+  runId: string;
+}
+
+export type AgentRunEventSource = "stdout" | "stderr";
+
+export interface AgentRunEventPayload {
+  runId: string;
+  source: AgentRunEventSource;
+  raw: string;
+  parsed?: unknown;
+}
+
+export type AgentRunStatus = "started" | "completed" | "failed" | "cancelled";
+
+export interface AgentRunStatusPayload {
+  runId: string;
+  status: AgentRunStatus;
+  exitCode?: number | null;
+  signalCode?: number | null;
+  error?: string;
+}
+
 export const APP_EVENTS = {
   connectionEstablished: "connection:established",
   connectionDisconnected: "connection:disconnected",
   metadataExtractionFailed: "metadata:extraction:failed",
   metadataExtractionCompleted: "metadata:extraction:completed",
+  agentRunEvent: "agent:run:event",
+  agentRunStatus: "agent:run:status",
 } as const;
 
 export type AppEventName = (typeof APP_EVENTS)[keyof typeof APP_EVENTS];
@@ -223,35 +221,13 @@ export interface AppEventPayloadMap {
   "connection:disconnected": null;
   "metadata:extraction:failed": string;
   "metadata:extraction:completed": ConnectionMetadata;
+  "agent:run:event": AgentRunEventPayload;
+  "agent:run:status": AgentRunStatusPayload;
 }
 
 export const themeSettingsSchema = z.object({
   mode: z.string(),
   baseTheme: z.string(),
-});
-
-export const openAISettingsSchema = z.object({
-  apiKey: z.string().optional(),
-  baseURL: z.string().optional(),
-  model: z.string().optional(),
-});
-
-export const anthropicSettingsSchema = z.object({
-  apiKey: z.string().optional(),
-  baseURL: z.string().optional(),
-  model: z.string().optional(),
-});
-
-export const openRouterSettingsSchema = z.object({
-  apiKey: z.string().optional(),
-  model: z.string().optional(),
-});
-
-export const aiProviderSettingsSchema = z.object({
-  provider: z.string().optional(),
-  openai: openAISettingsSchema.optional(),
-  anthropic: anthropicSettingsSchema.optional(),
-  openrouter: openRouterSettingsSchema.optional(),
 });
 
 export const windowSettingsSchema = z.object({
@@ -313,12 +289,12 @@ export const extractMetadataSchema = z.object({
   dbName: z.string().optional().default(""),
 });
 
-export const updateAIDescriptionSchema = z.object({
-  dbName: z.string(),
-  targetType: z.enum(["database", "table", "column"]),
-  tableName: z.string().optional().default(""),
-  columnName: z.string().optional().default(""),
-  description: z.string(),
+export const startAgentRunSchema = z.object({
+  prompt: z.string().min(1),
+});
+
+export const cancelAgentRunSchema = z.object({
+  runId: z.string().min(1),
 });
 
 export const rpcErrorSchema = z.object({
@@ -333,6 +309,8 @@ export const appEventEnvelopeSchema = z.object({
     APP_EVENTS.connectionDisconnected,
     APP_EVENTS.metadataExtractionFailed,
     APP_EVENTS.metadataExtractionCompleted,
+    APP_EVENTS.agentRunEvent,
+    APP_EVENTS.agentRunStatus,
   ]),
   payload: z.unknown().optional().nullable(),
 });

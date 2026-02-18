@@ -1,18 +1,21 @@
-import { Electroview } from "electrobun/view";
 import {
-  appEventEnvelopeSchema,
-  type AIProviderSettings,
   type AppEventName,
   type AppRpcError,
+  appEventEnvelopeSchema,
+  type CancelAgentRunInput,
   type ConnectionDetails,
   type ConnectionMetadata,
   type ExtractMetadataInput,
   type SQLResult,
+  type StartAgentRunInput,
+  type StartAgentRunOutput,
   type TableDataResponse,
   type TableSchema,
   type ThemeSettings,
   type WindowSettings,
 } from "@shared/contracts";
+import { Electroview } from "electrobun/view";
+
 export type { services } from "./models";
 
 type EventHandler = (payload?: any) => void;
@@ -81,7 +84,12 @@ async function rpcRequest<T>(method: string, payload?: unknown): Promise<T> {
       throw new Error("RPC bridge is not initialized");
     }
 
-    const endpoint = (electroview.rpc.request as Record<string, (...args: unknown[]) => Promise<T>>)[method];
+    const endpoint = (
+      electroview.rpc.request as Record<
+        string,
+        (...args: unknown[]) => Promise<T>
+      >
+    )[method];
     if (typeof endpoint !== "function") {
       throw new Error(`RPC method '${method}' is not defined`);
     }
@@ -127,7 +135,9 @@ export async function ConnectUsingSaved(
   return rpcRequest<ConnectionDetails>("ConnectUsingSaved", connectionId);
 }
 
-export async function DeleteSavedConnection(connectionId: string): Promise<void> {
+export async function DeleteSavedConnection(
+  connectionId: string,
+): Promise<void> {
   return rpcRequest<void>("DeleteSavedConnection", connectionId);
 }
 
@@ -143,10 +153,6 @@ export async function ExtractDatabaseMetadata(
   input: ExtractMetadataInput,
 ): Promise<ConnectionMetadata> {
   return rpcRequest<ConnectionMetadata>("ExtractDatabaseMetadata", input);
-}
-
-export async function GetAIProviderSettings(): Promise<AIProviderSettings> {
-  return rpcRequest<AIProviderSettings>("GetAIProviderSettings");
 }
 
 export async function GetActiveConnection(): Promise<ConnectionDetails | null> {
@@ -209,42 +215,40 @@ export async function ListTables(dbName: string): Promise<string[]> {
   return rpcRequest<string[]>("ListTables", dbName);
 }
 
-export async function SaveAIProviderSettings(
-  settings: AIProviderSettings,
-): Promise<void> {
-  return rpcRequest<void>("SaveAIProviderSettings", settings);
-}
-
-export async function SaveConnection(details: ConnectionDetails): Promise<string> {
+export async function SaveConnection(
+  details: ConnectionDetails,
+): Promise<string> {
   return rpcRequest<string>("SaveConnection", details);
 }
 
-export async function SaveThemeSettings(settings: ThemeSettings): Promise<void> {
+export async function SaveThemeSettings(
+  settings: ThemeSettings,
+): Promise<void> {
   return rpcRequest<void>("SaveThemeSettings", settings);
 }
 
-export async function SaveWindowSettings(settings: WindowSettings): Promise<void> {
+export async function SaveWindowSettings(
+  settings: WindowSettings,
+): Promise<void> {
   return rpcRequest<void>("SaveWindowSettings", settings);
 }
 
-export async function TestConnection(details: ConnectionDetails): Promise<boolean> {
+export async function TestConnection(
+  details: ConnectionDetails,
+): Promise<boolean> {
   return rpcRequest<boolean>("TestConnection", details);
 }
 
-export async function UpdateAIDescription(
-  dbName: string,
-  targetType: string,
-  tableName: string,
-  columnName: string,
-  description: string,
+export async function StartAgentRun(
+  input: StartAgentRunInput,
+): Promise<StartAgentRunOutput> {
+  return rpcRequest<StartAgentRunOutput>("StartAgentRun", input);
+}
+
+export async function CancelAgentRun(
+  input: CancelAgentRunInput,
 ): Promise<void> {
-  return rpcRequest<void>("UpdateAIDescription", {
-    dbName,
-    targetType,
-    tableName,
-    columnName,
-    description,
-  });
+  return rpcRequest<void>("CancelAgentRun", input);
 }
 
 export async function WindowIsMaximised(): Promise<boolean> {
