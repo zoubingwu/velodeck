@@ -101,9 +101,9 @@ jobs:
       - name: Package macOS Artifact
         id: package
         run: |
-          APP_PATH=$(find . -type d -name "TiDB Desktop.app" | head -n 1)
+          APP_PATH=$(find . -type d -name "VeloDeck.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "Could not find TiDB Desktop.app"
+            echo "Could not find VeloDeck.app"
             find . -type d -name "*.app"
             exit 1
           fi
@@ -112,9 +112,9 @@ jobs:
           APP_NAME=$(basename "$APP_PATH")
 
           cd "$APP_DIR"
-          zip -r "TiDB Desktop.app.zip" "$APP_NAME"
+          zip -r "VeloDeck.app.zip" "$APP_NAME"
 
-          echo "asset_path=${APP_DIR}/TiDB Desktop.app.zip" >> $GITHUB_OUTPUT
+          echo "asset_path=${APP_DIR}/VeloDeck.app.zip" >> $GITHUB_OUTPUT
         shell: bash
 
       - name: Upload macOS Artifact to Release
@@ -124,5 +124,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url || steps.get_release.outputs.upload_url }}
           asset_path: ${{ steps.package.outputs.asset_path }}
-          asset_name: TiDB-Desktop-${{ steps.vars.outputs.tag }}-macos.app.zip
+          asset_name: VeloDeck-${{ steps.vars.outputs.tag }}-macos.app.zip
           asset_content_type: application/zip

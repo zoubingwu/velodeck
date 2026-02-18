@@ -1,19 +1,19 @@
 ## About
 
-TiDB Desktop is a modern lightweight TiDB/MySQL client with an external Codex CLI agent.
+VeloDeck is a modern lightweight TiDB/MySQL client with an external Codex CLI agent.
 
 ![screenshot](./screenshot.gif)
 
 ## Download
 
-You can download the latest release from the [GitHub Releases page](https://github.com/zoubingwu/tidb-desktop/releases).
+You can download the latest release from the [GitHub Releases page](https://github.com/zoubingwu/velodeck/releases).
 
 ## Tech Stack
 
 - Desktop runtime: Electrobun
 - Backend runtime: Bun + TypeScript
 - Frontend: React + Vite
-- Storage: `~/.tidb-desktop/config.json` and `~/.tidb-desktop/metadata/*.json`
+- Storage: `~/.velodeck/config.json` and `~/.velodeck/metadata/*.json`
 
 ## Development
 
@@ -66,4 +66,4 @@ bun run build
 - Window size/position are persisted on close.
 - Connection/session, metadata extraction, and app events are bridged through Electrobun RPC.
 - Agent runs are executed via local `codex exec --json`.
-- Agent skills are bootstrapped under `~/.tidb-desktop/.agents/skills`.
+- Agent skills are bootstrapped under `~/.velodeck/.agents/skills`.
