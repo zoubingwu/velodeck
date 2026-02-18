@@ -114,7 +114,7 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
       <header className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">
-            Welcome to TiDB Desktop
+            Welcome to VeloDeck
           </h1>
           <p className="text-muted-foreground">
             Connect and manage your MySQL, PostgreSQL, SQLite, and BigQuery

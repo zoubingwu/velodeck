@@ -2,8 +2,8 @@ import type { ElectrobunConfig } from "electrobun";
 
 export default {
   app: {
-    name: "TiDB Desktop",
-    identifier: "com.zoubingwu.tidb-desktop",
+    name: "VeloDeck",
+    identifier: "com.zoubingwu.velodeck",
     version: "0.1.0",
   },
   build: {

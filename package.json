@@ -1,10 +1,10 @@
 {
-  "name": "tidb-desktop",
+  "name": "velodeck",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "description": "TiDB Desktop migrated to Electrobun + Bun",
+  "description": "VeloDeck desktop client built with Electrobun + Bun",
   "scripts": {
     "dev": "bun run build && electrobun dev",
     "dev:hmr": "concurrently \"bun run hmr\" \"bun run dev\"",

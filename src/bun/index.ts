@@ -4,7 +4,7 @@ import { events } from "./events";
 import { configService, createBunRPC } from "./rpc";
 import { logger } from "./services/logger-service";
 
-const APP_TITLE = "TiDB Desktop";
+const APP_TITLE = "VeloDeck";
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 const PROD_VIEW_URL = "views://mainview/index.html";

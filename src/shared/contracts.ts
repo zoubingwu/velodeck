@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CONFIG_DIR_NAME = ".tidb-desktop";
+export const CONFIG_DIR_NAME = ".velodeck";
 export const CONFIG_FILE_NAME = "config.json";
 export const METADATA_DIR_NAME = "metadata";
 export const AGENT_DIR_NAME = ".agents";

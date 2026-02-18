@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "tidb-desktop",
+      "name": "velodeck",
       "dependencies": {
         "@radix-ui/react-accordion": "1.2.4",
         "@radix-ui/react-alert-dialog": "1.1.7",

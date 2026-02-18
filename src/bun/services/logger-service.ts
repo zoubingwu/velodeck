@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { CONFIG_DIR_NAME } from "../../shared/contracts";
 
-const LOG_FILE_NAME = "tidb-desktop.log";
+const LOG_FILE_NAME = "velodeck.log";
 
 function timestamp(): string {
   return new Date().toISOString();
