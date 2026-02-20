@@ -105,7 +105,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
     supportsServerSideFilter: true,
   } as const;
 
-  private withDatabase<T>(
+  private async withDatabase<T>(
     details: SQLiteConnectionDetails,
     run: (db: Database) => Promise<T> | T,
   ): Promise<T> {
@@ -117,7 +117,7 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
     try {
       this.attachDatabases(db, details);
-      return Promise.resolve(run(db));
+      return await run(db);
     } finally {
       db.close();
     }
