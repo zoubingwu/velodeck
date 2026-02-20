@@ -6,6 +6,7 @@
 - Backend services: Bun + TypeScript with adapter-based multi-database gateway (`src/bun/services`)
 - Frontend: React + Vite (`src/mainview`)
 - Shared contracts: `src/shared/contracts.ts`
+- Shared RPC schema: `src/shared/rpc-schema.ts`
 
 ## Data Model and Persistence
 
@@ -16,8 +17,9 @@
 
 ## RPC and Events
 
-- Bun RPC handlers: `src/bun/rpc.ts`
-- Renderer bridge: `src/mainview/bridge/index.ts`
+- Bun RPC handlers: `src/bun/rpc.ts` (typed by `AppRPCSchema`)
+- Renderer bridge: `src/mainview/bridge/index.ts` (`api` request facade + `onEvent` listener)
+- Event forwarding: `src/bun/events.ts` via `webview.rpc.send[...]`
 - Event names:
   - `connection:established`
   - `connection:disconnected`
@@ -45,8 +47,8 @@
 - `src/bun/services/agent-service.ts`: codex exec runner + `.agents/skills` bootstrap
 - `src/bun/services/agent-bridge-service.ts`: local read-only SQL HTTP bridge for skills
 - `src/mainview/main.tsx`: renderer entrypoint
-- `src/mainview/bridge/index.ts`: frontend API facade replacing Wails `wailsjs`
-- `src/mainview/bridge/models.ts`: frontend `services` type namespace
+- `src/mainview/bridge/index.ts`: typed Electrobun RPC client (`api`) + typed event subscription (`onEvent`)
+- `src/shared/rpc-schema.ts`: shared Electrobun RPC contract between Bun and renderer
 
 ## Removed Stack
 

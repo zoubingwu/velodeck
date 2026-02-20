@@ -15,6 +15,7 @@ import {
   themeSettingsSchema,
   windowSettingsSchema,
 } from "../shared/contracts";
+import type { AppRPCSchema } from "../shared/rpc-schema";
 import { events } from "./events";
 import { AgentBridgeService } from "./services/agent-bridge-service";
 import { AgentService } from "./services/agent-service";
@@ -77,6 +78,14 @@ function toRpcError(
   };
 }
 
+function asRecord(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("request payload must be an object");
+  }
+
+  return payload as Record<string, unknown>;
+}
+
 function assertActiveConnection(): {
   connectionId: string;
   details: ConnectionDetails;
@@ -134,22 +143,23 @@ function disconnectCurrentSession(): void {
 }
 
 export function createBunRPC(windowController: WindowController) {
-  return BrowserView.defineRPC({
+  return BrowserView.defineRPC<AppRPCSchema>({
     handlers: {
       requests: {
-        async TestConnection(payload: unknown): Promise<boolean> {
+        async testConnection(payload: unknown): Promise<boolean> {
           try {
-            const details = connectionDetailsSchema.parse(payload);
+            const input = asRecord(payload);
+            const details = connectionDetailsSchema.parse(input.details);
             return await databaseService.testConnection(details);
           } catch (error) {
             throw toRpcError(error, "TEST_CONNECTION_FAILED");
           }
         },
 
-        async ConnectUsingSaved(
-          connectionId: unknown,
-        ): Promise<ConnectionDetails> {
+        async connectUsingSaved(payload: unknown): Promise<ConnectionDetails> {
           try {
+            const input = asRecord(payload);
+            const connectionId = input.connectionId;
             if (typeof connectionId !== "string" || !connectionId.trim()) {
               throw new Error("connection ID cannot be empty");
             }
@@ -192,31 +202,36 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async Disconnect(): Promise<void> {
+        async disconnect(_payload: unknown): Promise<void> {
           disconnectCurrentSession();
         },
 
-        async GetActiveConnection(): Promise<ConnectionDetails | null> {
+        async getActiveConnection(
+          _payload: unknown,
+        ): Promise<ConnectionDetails | null> {
           return sessionService.getActiveConnection();
         },
 
-        async ListSavedConnections(): Promise<
-          Record<string, ConnectionDetails>
-        > {
+        async listSavedConnections(
+          _payload: unknown,
+        ): Promise<Record<string, ConnectionDetails>> {
           return configService.getAllConnections();
         },
 
-        async SaveConnection(payload: unknown): Promise<string> {
+        async saveConnection(payload: unknown): Promise<string> {
           try {
-            const details = connectionDetailsSchema.parse(payload);
+            const input = asRecord(payload);
+            const details = connectionDetailsSchema.parse(input.details);
             return configService.addOrUpdateConnection(details);
           } catch (error) {
             throw toRpcError(error, "SAVE_CONNECTION_FAILED");
           }
         },
 
-        async DeleteSavedConnection(connectionId: unknown): Promise<void> {
+        async deleteSavedConnection(payload: unknown): Promise<void> {
           try {
+            const input = asRecord(payload);
+            const connectionId = input.connectionId;
             if (typeof connectionId !== "string" || !connectionId.trim()) {
               throw new Error("connection ID cannot be empty");
             }
@@ -232,9 +247,9 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async ExecuteSQL(payload: unknown) {
+        async executeSQL(payload: unknown) {
           try {
-            const input = executeSQLSchema.parse({ query: payload });
+            const input = executeSQLSchema.parse(payload);
             const { details } = assertActiveConnection();
             return await databaseService.executeSQL(details, input.query);
           } catch (error) {
@@ -242,7 +257,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async GetVersion(): Promise<string> {
+        async getVersion(_payload: unknown): Promise<string> {
           try {
             const { details } = assertActiveConnection();
             return await getVersionForConnection(details);
@@ -251,7 +266,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async GetConnectionCapabilities() {
+        async getConnectionCapabilities(_payload: unknown) {
           try {
             const { details } = assertActiveConnection();
             return databaseService.getCapabilities(details);
@@ -260,7 +275,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async ListNamespaces() {
+        async listNamespaces(_payload: unknown) {
           try {
             const { details } = assertActiveConnection();
             return await databaseService.listNamespaces(details);
@@ -269,9 +284,9 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async ListTables(payload: unknown) {
+        async listTables(payload: unknown) {
           try {
-            const input = listTablesSchema.parse({ namespaceName: payload });
+            const input = listTablesSchema.parse(payload);
             const { details } = assertActiveConnection();
             return await databaseService.listTables(
               details,
@@ -282,7 +297,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async GetTableData(payload: unknown) {
+        async getTableData(payload: unknown) {
           try {
             const input = getTableDataSchema.parse(payload);
             const { details } = assertActiveConnection();
@@ -292,7 +307,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async GetTableSchema(payload: unknown) {
+        async getTableSchema(payload: unknown) {
           try {
             const input = getTableSchemaSchema.parse(payload);
             const { details } = assertActiveConnection();
@@ -306,33 +321,35 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async GetThemeSettings() {
+        async getThemeSettings(_payload: unknown) {
           return configService.getThemeSettings();
         },
 
-        async SaveThemeSettings(payload: unknown): Promise<void> {
+        async saveThemeSettings(payload: unknown): Promise<void> {
           try {
-            const settings = themeSettingsSchema.parse(payload);
+            const input = asRecord(payload);
+            const settings = themeSettingsSchema.parse(input.settings);
             configService.saveThemeSettings(settings);
           } catch (error) {
             throw toRpcError(error, "SAVE_THEME_SETTINGS_FAILED");
           }
         },
 
-        async GetWindowSettings() {
+        async getWindowSettings(_payload: unknown) {
           return configService.getWindowSettings();
         },
 
-        async SaveWindowSettings(payload: unknown): Promise<void> {
+        async saveWindowSettings(payload: unknown): Promise<void> {
           try {
-            const settings = windowSettingsSchema.parse(payload);
+            const input = asRecord(payload);
+            const settings = windowSettingsSchema.parse(input.settings);
             configService.saveWindowSettings(settings);
           } catch (error) {
             throw toRpcError(error, "SAVE_WINDOW_SETTINGS_FAILED");
           }
         },
 
-        async GetDatabaseMetadata() {
+        async getDatabaseMetadata(_payload: unknown) {
           try {
             const { connectionId } = assertActiveConnection();
             return metadataService.getMetadata(connectionId);
@@ -341,7 +358,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async ExtractDatabaseMetadata(payload: unknown) {
+        async extractDatabaseMetadata(payload: unknown) {
           try {
             const input = extractMetadataSchema.parse(payload || {});
             const connectionId = requireConnectionId(input.connectionId);
@@ -370,7 +387,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async StartAgentRun(payload: unknown): Promise<{ runId: string }> {
+        async startAgentRun(payload: unknown): Promise<{ runId: string }> {
           try {
             const input = startAgentRunSchema.parse(payload);
             const runId = await agentService.startRun(input.prompt);
@@ -380,7 +397,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async CancelAgentRun(payload: unknown): Promise<void> {
+        async cancelAgentRun(payload: unknown): Promise<void> {
           try {
             const input = cancelAgentRunSchema.parse(payload);
             const cancelled = agentService.cancelRun(input.runId);
@@ -392,23 +409,23 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async WindowIsMaximised(): Promise<boolean> {
+        async windowIsMaximised(_payload: unknown): Promise<boolean> {
           return windowController.isMaximised();
         },
 
-        async WindowMaximise(): Promise<void> {
+        async windowMaximise(_payload: unknown): Promise<void> {
           windowController.maximise();
         },
 
-        async WindowUnmaximise(): Promise<void> {
+        async windowUnmaximise(_payload: unknown): Promise<void> {
           windowController.unmaximise();
         },
 
-        async ClipboardGetText(): Promise<string> {
+        async clipboardGetText(_payload: unknown): Promise<string> {
           return windowController.readClipboardText();
         },
 
-        async PickSQLiteFile(payload: unknown): Promise<string> {
+        async pickSQLiteFile(payload: unknown): Promise<string> {
           try {
             const input = pickSQLiteFileSchema.parse(payload || {});
             return await windowController.pickSQLiteFile(input.currentPath);
