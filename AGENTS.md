@@ -14,6 +14,7 @@
 - Metadata files: `~/.velodeck/metadata/<connection-id>.json`
 - Log file: `~/.velodeck/velodeck.log`
 - Agent skills: `~/.velodeck/.agents/skills`
+- Agent project MCP config: `~/.velodeck/.codex/config.toml`
 
 ## RPC and Events
 
@@ -27,6 +28,8 @@
   - `metadata:extraction:completed`
   - `agent:run:event`
   - `agent:run:status`
+  - `agent:sql:approval:requested`
+  - `agent:sql:approval:resolved`
 
 ## Directory Map
 
@@ -44,8 +47,8 @@
 - `src/bun/services/metadata-service.ts`: metadata extraction and persistence
 - `src/bun/services/session-service.ts`: active connection state
 - `src/bun/services/logger-service.ts`: file + stderr logging
-- `src/bun/services/agent-service.ts`: codex exec runner + `.agents/skills` bootstrap
-- `src/bun/services/agent-bridge-service.ts`: local read-only SQL HTTP bridge for skills
+- `src/bun/services/agent-service.ts`: codex exec runner + `.agents/skills` bootstrap + MCP wiring
+- `src/bun/services/agent-mcp-service.ts`: local MCP SQL bridge + write approval flow
 - `src/mainview/main.tsx`: renderer entrypoint
 - `src/mainview/bridge/index.ts`: typed Electrobun RPC client (`api`) + typed event subscription (`onEvent`)
 - `src/shared/rpc-schema.ts`: shared Electrobun RPC contract between Bun and renderer

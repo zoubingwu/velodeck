@@ -11,13 +11,14 @@ import {
   getTableSchemaSchema,
   listTablesSchema,
   pickSQLiteFileSchema,
+  resolveAgentSQLApprovalSchema,
   startAgentRunSchema,
   themeSettingsSchema,
   windowSettingsSchema,
 } from "../shared/contracts";
 import type { AppRPCSchema } from "../shared/rpc-schema";
 import { events } from "./events";
-import { AgentBridgeService } from "./services/agent-bridge-service";
+import { AgentMCPService } from "./services/agent-mcp-service";
 import { AgentService } from "./services/agent-service";
 import { ConfigService } from "./services/config-service";
 import { DatabaseGatewayService } from "./services/database-gateway-service";
@@ -32,14 +33,12 @@ export const metadataService = new MetadataService(
   databaseService,
 );
 export const sessionService = new SessionService();
-export const agentBridgeService = new AgentBridgeService(
-  sessionService,
-  databaseService,
-);
+export const agentMCPService = new AgentMCPService(events, databaseService);
 export const agentService = new AgentService(
   events,
-  agentBridgeService,
+  agentMCPService,
   sessionService,
+  databaseService,
 );
 
 export type WindowController = {
@@ -406,6 +405,15 @@ export function createBunRPC(windowController: WindowController) {
             }
           } catch (error) {
             throw toRpcError(error, "CANCEL_AGENT_RUN_FAILED");
+          }
+        },
+
+        async resolveAgentSQLApproval(payload: unknown): Promise<void> {
+          try {
+            const input = resolveAgentSQLApprovalSchema.parse(payload);
+            await agentService.resolveSQLApproval(input);
+          } catch (error) {
+            throw toRpcError(error, "RESOLVE_AGENT_SQL_APPROVAL_FAILED");
           }
         },
 

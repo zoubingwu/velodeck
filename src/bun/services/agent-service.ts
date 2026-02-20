@@ -1,17 +1,23 @@
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   AGENT_DIR_NAME,
   AGENT_SKILLS_DIR_NAME,
   type AgentRunEventSource,
+  type AgentSQLApprovalResolveInput,
   APP_EVENTS,
   CONFIG_DIR_NAME,
   type ConnectionDetails,
 } from "../../shared/contracts";
 import type { EventService } from "../events";
-import type { AgentBridgeService } from "./agent-bridge-service";
+import {
+  type AgentMCPService,
+  VELODECK_MCP_BEARER_ENV,
+  VELODECK_MCP_SERVER_NAME,
+} from "./agent-mcp-service";
+import type { DatabaseGatewayService } from "./database-gateway-service";
 import { logger } from "./logger-service";
 import type { SessionService } from "./session-service";
 
@@ -21,57 +27,41 @@ type AgentRun = {
   cancelled: boolean;
 };
 
-const CODEX_ARGS = [
+const CODEX_BASE_ARGS = [
   "exec",
   "--json",
-  "--skip-git-repo-check",
-  "-a",
+  "--color",
   "never",
+  "--skip-git-repo-check",
   "-s",
-  "read-only",
+  "workspace-write",
 ] as const;
 
-const SKILL_MD_TEMPLATE = `# VeloDeck Read-only SQL Skill
+const DB_INDEX_SKILL_TEMPLATE = `---
+name: db-index
+description: Inspect active database schema and generate markdown index files in references/. Use when users ask for schema inventory, relationship mapping, table documentation, or database index docs.
+compatibility: Requires VeloDeck MCP tool velodeck_sql_execute and write access under ~/.velodeck/.agents/skills/db-index/references.
+metadata:
+  owner: velodeck
+  version: "1.0"
+---
 
-Use this skill when you need to run read-only SQL against the active VeloDeck connection.
+# VeloDeck DB Index Skill
 
-## Rules
-- Only read-only SQL is allowed.
-- Allowed: SELECT, SHOW, DESCRIBE, EXPLAIN, WITH (read-only query).
-- Disallowed: INSERT, UPDATE, DELETE, DDL, privilege changes, multiple statements.
+Use this skill when you need to inspect database structure and generate markdown index documents.
 
-## How to execute
-Run the helper script below and pass the SQL text:
+## Tooling
+- Use MCP tool \`velodeck_sql_execute\` to run SQL.
+- Read SQL runs directly.
+- Write SQL requires explicit user approval.
 
-\`\`\`bash
-./scripts/sql_read.sh "SELECT * FROM users LIMIT 10"
-\`\`\`
+## Output
+Write generated index documents under \`./references\` in this skill directory.
 
-The script calls the local VeloDeck bridge via:
-- \`VELODECK_AGENT_BRIDGE_URL\`
-- \`VELODECK_AGENT_BRIDGE_TOKEN\`
-`;
-
-const SKILL_SCRIPT_TEMPLATE = `#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ $# -lt 1 ]]; then
-  echo "usage: ./scripts/sql_read.sh \\"<read-only-sql>\\"" >&2
-  exit 1
-fi
-
-if [[ -z "\${VELODECK_AGENT_BRIDGE_URL:-}" || -z "\${VELODECK_AGENT_BRIDGE_TOKEN:-}" ]]; then
-  echo "missing VELODECK_AGENT_BRIDGE_URL or VELODECK_AGENT_BRIDGE_TOKEN" >&2
-  exit 1
-fi
-
-query="$*"
-
-curl -sS \\
-  -H "Authorization: Bearer \${VELODECK_AGENT_BRIDGE_TOKEN}" \\
-  -H "Content-Type: text/plain; charset=utf-8" \\
-  --data "$query" \\
-  "\${VELODECK_AGENT_BRIDGE_URL}/v1/sql/read"
+## Minimum artifacts
+- \`schema-overview.md\`: namespace/table inventory
+- \`table-relationships.md\`: primary/foreign key relationships
+- \`table-columns.md\`: key column dictionary with types
 `;
 
 export class AgentService {
@@ -81,8 +71,9 @@ export class AgentService {
 
   constructor(
     private readonly events: EventService,
-    private readonly bridgeService: AgentBridgeService,
+    private readonly mcpService: AgentMCPService,
     private readonly sessionService: SessionService,
+    private readonly databaseService: DatabaseGatewayService,
   ) {
     this.configDir = join(homedir(), CONFIG_DIR_NAME);
     this.skillsDir = join(
@@ -102,18 +93,33 @@ export class AgentService {
     this.ensureSkillTemplates();
 
     const runId = randomBytes(8).toString("hex");
-    const bridgeToken = this.bridgeService.registerRun(runId);
     const activeConnection = this.sessionService.getActiveConnection();
+    const mcpToken = this.mcpService.registerRun(runId, activeConnection);
+    const promptWithContext = await this.buildPromptWithContext(
+      cleaned,
+      activeConnection,
+    );
 
     try {
+      this.mcpService.upsertManagedProjectConfig(this.configDir);
+      const mcpURL = this.mcpService.getMCPURL();
+      const codexExecutable = this.resolveCodexExecutable();
+
       const child = Bun.spawn(
-        [...CODEX_ARGS, "-C", this.configDir, "--", cleaned],
+        [
+          codexExecutable,
+          ...this.buildCodexArgs(mcpURL),
+          "-C",
+          this.configDir,
+          "--",
+          promptWithContext,
+        ],
         {
           stdin: "ignore",
           stdout: "pipe",
           stderr: "pipe",
           cwd: this.configDir,
-          env: this.buildRunEnv(bridgeToken, activeConnection),
+          env: this.buildRunEnv(mcpToken, activeConnection),
         },
       );
 
@@ -132,7 +138,7 @@ export class AgentService {
 
       return runId;
     } catch (error) {
-      this.bridgeService.revokeRun(runId);
+      this.mcpService.revokeRun(runId);
       throw error;
     }
   }
@@ -155,8 +161,106 @@ export class AgentService {
     }
   }
 
+  async resolveSQLApproval(input: AgentSQLApprovalResolveInput): Promise<void> {
+    await this.mcpService.resolveApproval(input);
+  }
+
+  private resolveCodexExecutable(): string {
+    const overridePath = process.env.VELODECK_CODEX_PATH?.trim();
+    if (overridePath) {
+      return overridePath;
+    }
+
+    const detected = Bun.which("codex");
+    if (detected) {
+      return detected;
+    }
+
+    const fallback = join(homedir(), ".bun", "bin", "codex");
+    if (existsSync(fallback)) {
+      return fallback;
+    }
+
+    return "codex";
+  }
+
+  private async buildPromptWithContext(
+    userPrompt: string,
+    activeConnection: ConnectionDetails | null,
+  ): Promise<string> {
+    const connectionSummary = this.describeConnection(activeConnection);
+    const dbVersion = await this.resolveConnectionVersion(activeConnection);
+
+    return [
+      "You are running inside the VeloDeck desktop app.",
+      "",
+      "Runtime context:",
+      `- Connection: ${connectionSummary}`,
+      `- Database version: ${dbVersion || "unknown"}`,
+      "",
+      "Execution rules:",
+      "- Use MCP tool `velodeck_sql_execute` for SQL execution.",
+      "- Return end-user output as concise Markdown.",
+      "- Do not output raw JSON event objects.",
+      "",
+      "User request:",
+      userPrompt,
+    ].join("\n");
+  }
+
+  private async resolveConnectionVersion(
+    activeConnection: ConnectionDetails | null,
+  ): Promise<string> {
+    if (!activeConnection) {
+      return "";
+    }
+
+    try {
+      return await this.databaseService.getVersion(activeConnection);
+    } catch (error) {
+      logger.warn(
+        `failed to resolve DB version for prompt context: ${String(error)}`,
+      );
+      return "";
+    }
+  }
+
+  private describeConnection(
+    activeConnection: ConnectionDetails | null,
+  ): string {
+    if (!activeConnection) {
+      return "none";
+    }
+
+    switch (activeConnection.kind) {
+      case "mysql":
+      case "postgres":
+        return `${activeConnection.kind} ${activeConnection.user}@${activeConnection.host}:${activeConnection.port}/${activeConnection.dbName}`;
+      case "sqlite":
+        return `sqlite file=${activeConnection.filePath}`;
+      case "bigquery":
+        return `bigquery project=${activeConnection.projectId}${activeConnection.location ? ` location=${activeConnection.location}` : ""}`;
+      default:
+        return "unknown";
+    }
+  }
+
+  private buildCodexArgs(mcpURL: string): string[] {
+    return [
+      ...CODEX_BASE_ARGS,
+      "-c",
+      `mcp_servers.${VELODECK_MCP_SERVER_NAME}.url=\"${mcpURL}\"`,
+      "-c",
+      `mcp_servers.${VELODECK_MCP_SERVER_NAME}.bearer_token_env_var=\"${VELODECK_MCP_BEARER_ENV}\"`,
+      "-c",
+      `mcp_servers.${VELODECK_MCP_SERVER_NAME}.required=true`,
+      "-c",
+      `mcp_servers.${VELODECK_MCP_SERVER_NAME}.enabled=true`,
+    ];
+  }
+
   private buildRunEnv(
-    bridgeToken: string,
+    mcpToken: string,
     activeConnection: ConnectionDetails | null,
   ): Record<string, string> {
     const env: Record<string, string> = {};
@@ -164,8 +268,7 @@ export class AgentService {
       env[key] = String(value ?? "");
     }
 
-    env.VELODECK_AGENT_BRIDGE_URL = this.bridgeService.getBaseURL();
-    env.VELODECK_AGENT_BRIDGE_TOKEN = bridgeToken;
+    env[VELODECK_MCP_BEARER_ENV] = mcpToken;
     env.VELODECK_ACTIVE_DB_KIND = activeConnection?.kind || "";
 
     if (!activeConnection) {
@@ -240,7 +343,7 @@ export class AgentService {
       errorMessage = error instanceof Error ? error.message : String(error);
       logger.error(`agent run failed (${runId}): ${errorMessage}`);
     } finally {
-      this.bridgeService.revokeRun(runId);
+      this.mcpService.revokeRun(runId);
       this.runs.delete(runId);
     }
 
@@ -323,6 +426,14 @@ export class AgentService {
     source: AgentRunEventSource,
     raw: string,
   ): Promise<void> {
+    const clipped =
+      raw.length > 4000 ? `${raw.slice(0, 4000)}...<truncated>` : raw;
+    if (source === "stderr") {
+      logger.warn(`[agent:${runId}] ${source}: ${clipped}`);
+    } else {
+      logger.info(`[agent:${runId}] ${source}: ${clipped}`);
+    }
+
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
@@ -339,19 +450,31 @@ export class AgentService {
   }
 
   private ensureSkillTemplates(): void {
-    const scriptsDir = join(this.skillsDir, "scripts");
-    mkdirSync(scriptsDir, { recursive: true, mode: 0o750 });
+    mkdirSync(this.skillsDir, { recursive: true, mode: 0o750 });
 
-    const skillDocPath = join(this.skillsDir, "SKILL.md");
+    const dbIndexSkillDir = join(this.skillsDir, "db-index");
+    const referencesDir = join(dbIndexSkillDir, "references");
+    mkdirSync(referencesDir, { recursive: true, mode: 0o750 });
+
+    const skillDocPath = join(dbIndexSkillDir, "SKILL.md");
     if (!existsSync(skillDocPath)) {
-      writeFileSync(skillDocPath, SKILL_MD_TEMPLATE, { mode: 0o600 });
+      writeFileSync(skillDocPath, DB_INDEX_SKILL_TEMPLATE, { mode: 0o600 });
+      return;
     }
 
-    const scriptPath = join(scriptsDir, "sql_read.sh");
-    if (!existsSync(scriptPath)) {
-      writeFileSync(scriptPath, SKILL_SCRIPT_TEMPLATE, { mode: 0o700 });
+    const existing = readFileSync(skillDocPath, "utf8");
+    if (!this.hasFrontmatter(existing)) {
+      writeFileSync(skillDocPath, DB_INDEX_SKILL_TEMPLATE, { mode: 0o600 });
+    }
+  }
+
+  private hasFrontmatter(content: string): boolean {
+    const trimmed = content.trimStart();
+    if (!trimmed.startsWith("---\n")) {
+      return false;
     }
 
-    chmodSync(scriptPath, 0o700);
+    const closing = trimmed.indexOf("\n---", 4);
+    return closing > 0;
   }
 }

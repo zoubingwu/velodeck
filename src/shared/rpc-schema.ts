@@ -1,5 +1,6 @@
 import type {
   AdapterCapabilities,
+  AgentSQLApprovalResolveInput,
   AppEventPayloadMap,
   CancelAgentRunInput,
   ConnectionDetails,
@@ -112,6 +113,10 @@ type BunRequests = {
   };
   cancelAgentRun: {
     params: CancelAgentRunInput;
+    response: void;
+  };
+  resolveAgentSQLApproval: {
+    params: AgentSQLApprovalResolveInput;
     response: void;
   };
   windowIsMaximised: {

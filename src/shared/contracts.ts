@@ -256,6 +256,31 @@ export interface CancelAgentRunInput {
   runId: string;
 }
 
+export type AgentSQLClassification = "read" | "write";
+
+export type AgentSQLApprovalDecision = "approved" | "rejected";
+
+export interface AgentSQLApprovalRequestPayload {
+  runId: string;
+  approvalId: string;
+  query: string;
+  classification: AgentSQLClassification;
+}
+
+export interface AgentSQLApprovalResolvedPayload {
+  runId: string;
+  approvalId: string;
+  decision: AgentSQLApprovalDecision;
+  reason?: string;
+}
+
+export interface AgentSQLApprovalResolveInput {
+  runId: string;
+  approvalId: string;
+  decision: AgentSQLApprovalDecision;
+  reason?: string;
+}
+
 export type AgentRunEventSource = "stdout" | "stderr";
 
 export interface AgentRunEventPayload {
@@ -282,6 +307,8 @@ export const APP_EVENTS = {
   metadataExtractionCompleted: "metadata:extraction:completed",
   agentRunEvent: "agent:run:event",
   agentRunStatus: "agent:run:status",
+  agentSQLApprovalRequested: "agent:sql:approval:requested",
+  agentSQLApprovalResolved: "agent:sql:approval:resolved",
 } as const;
 
 export type AppEventName = (typeof APP_EVENTS)[keyof typeof APP_EVENTS];
@@ -293,6 +320,8 @@ export interface AppEventPayloadMap {
   "metadata:extraction:completed": ConnectionMetadata;
   "agent:run:event": AgentRunEventPayload;
   "agent:run:status": AgentRunStatusPayload;
+  "agent:sql:approval:requested": AgentSQLApprovalRequestPayload;
+  "agent:sql:approval:resolved": AgentSQLApprovalResolvedPayload;
 }
 
 export const themeSettingsSchema = z.object({
@@ -419,6 +448,13 @@ export const cancelAgentRunSchema = z.object({
   runId: z.string().min(1),
 });
 
+export const resolveAgentSQLApprovalSchema = z.object({
+  runId: z.string().min(1),
+  approvalId: z.string().min(1),
+  decision: z.enum(["approved", "rejected"]),
+  reason: z.string().optional(),
+});
+
 export const rpcErrorSchema = z.object({
   code: z.string(),
   message: z.string(),
@@ -433,6 +469,8 @@ export const appEventEnvelopeSchema = z.object({
     APP_EVENTS.metadataExtractionCompleted,
     APP_EVENTS.agentRunEvent,
     APP_EVENTS.agentRunStatus,
+    APP_EVENTS.agentSQLApprovalRequested,
+    APP_EVENTS.agentSQLApprovalResolved,
   ]),
   payload: z.unknown().optional().nullable(),
 });

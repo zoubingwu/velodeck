@@ -1,4 +1,5 @@
 import {
+  type AgentSQLApprovalResolveInput,
   APP_EVENTS,
   type AppEventName,
   type AppEventPayloadMap,
@@ -238,6 +239,10 @@ export const api = {
       callRPC("startAgentRun", () => getRPC().request.startAgentRun(input)),
     cancelRun: (input: CancelAgentRunInput) =>
       callRPC("cancelAgentRun", () => getRPC().request.cancelAgentRun(input)),
+    resolveSqlApproval: (input: AgentSQLApprovalResolveInput) =>
+      callRPC("resolveAgentSQLApproval", () =>
+        getRPC().request.resolveAgentSQLApproval(input),
+      ),
   },
 };
 
