@@ -1,30 +1,24 @@
 import {
-  type AdapterCapabilities,
+  APP_EVENTS,
   type AppEventName,
+  type AppEventPayloadMap,
   type AppRpcError,
-  appEventEnvelopeSchema,
   type CancelAgentRunInput,
   type ConnectionDetails,
-  type ConnectionMetadata,
   type ExtractMetadataInput,
-  type NamespaceRef,
-  type SQLResult,
+  type GetTableDataInput,
   type StartAgentRunInput,
   type StartAgentRunOutput,
-  type TableDataResponse,
-  type TableRef,
-  type TableSchema,
   type ThemeSettings,
   type WindowSettings,
 } from "@shared/contracts";
+import type { AppRPCSchema } from "@shared/rpc-schema";
 import { Electroview } from "electrobun/view";
 
-export type { services } from "./models";
+export { APP_EVENTS };
+export type * from "@shared/contracts";
 
-type EventHandler = (payload?: any) => void;
-
-const listeners = new Map<string, Set<EventHandler>>();
-const CONNECTION_METHODS = new Set(["ConnectUsingSaved", "TestConnection"]);
+const CONNECTION_METHODS = new Set(["connectUsingSaved", "testConnection"]);
 
 function isTimeoutError(message: string): boolean {
   return (
@@ -34,23 +28,12 @@ function isTimeoutError(message: string): boolean {
   );
 }
 
-function emitLocal(eventName: string, payload?: unknown): void {
-  const handlers = listeners.get(eventName);
-  if (!handlers) {
-    return;
-  }
-
-  for (const handler of handlers) {
-    handler(payload);
-  }
-}
-
 function toFriendlyErrorMessage(rawMessage: string, method?: string): string {
   const message = rawMessage.trim();
   const lower = message.toLowerCase();
 
   if (isTimeoutError(lower)) {
-    if (method === "PickSQLiteFile") {
+    if (method === "pickSQLiteFile") {
       return "File picker timed out. Please try again.";
     }
 
@@ -123,21 +106,10 @@ function normalizeBridgeError(error: unknown, method?: string): Error {
   return new Error(toFriendlyErrorMessage(String(error), method));
 }
 
-const webviewRPC = Electroview.defineRPC({
+const webviewRPC = Electroview.defineRPC<AppRPCSchema>({
   maxRequestTime: Infinity,
   handlers: {
-    requests: {
-      emitEvent(envelope: unknown): null {
-        const parsed = appEventEnvelopeSchema.safeParse(envelope);
-        if (!parsed.success) {
-          return null;
-        }
-
-        const { eventName, payload } = parsed.data;
-        emitLocal(eventName, payload);
-        return null;
-      },
-    },
+    requests: {},
     messages: {},
   },
 });
@@ -146,199 +118,127 @@ const electroview = new Electroview({
   rpc: webviewRPC,
 });
 
-async function rpcRequest<T>(method: string, payload?: unknown): Promise<T> {
+function getRPC() {
+  if (!electroview.rpc) {
+    throw new Error("RPC bridge is not initialized");
+  }
+
+  return electroview.rpc;
+}
+
+async function callRPC<T>(method: string, task: () => Promise<T>): Promise<T> {
   try {
-    if (!electroview.rpc) {
-      throw new Error("RPC bridge is not initialized");
-    }
-
-    const endpoint = (
-      electroview.rpc.request as Record<
-        string,
-        (...args: unknown[]) => Promise<T>
-      >
-    )[method];
-    if (typeof endpoint !== "function") {
-      throw new Error(`RPC method '${method}' is not defined`);
-    }
-
-    if (payload === undefined) {
-      return await endpoint();
-    }
-
-    return await endpoint(payload);
+    return await task();
   } catch (error) {
     throw normalizeBridgeError(error, method);
   }
 }
 
-export function EventsOn(
-  eventName: AppEventName | string,
-  callback: EventHandler,
+export function onEvent<EventName extends AppEventName>(
+  eventName: EventName,
+  callback: (payload: AppEventPayloadMap[EventName]) => void,
 ): () => void {
-  const handlers = listeners.get(eventName) || new Set<EventHandler>();
-  handlers.add(callback);
-  listeners.set(eventName, handlers);
+  const rpc = getRPC();
+  const listener = (payload: AppEventPayloadMap[EventName]) => {
+    callback(payload);
+  };
+
+  rpc.addMessageListener(eventName, listener);
 
   return () => {
-    const existing = listeners.get(eventName);
-    if (!existing) {
-      return;
-    }
-
-    existing.delete(callback);
-    if (existing.size === 0) {
-      listeners.delete(eventName);
-    }
+    rpc.removeMessageListener(eventName, listener);
   };
 }
 
-export function EventsEmit(eventName: string, payload?: unknown): void {
-  emitLocal(eventName, payload);
-}
+export const api = {
+  connection: {
+    connectUsingSaved: (input: { connectionId: string }) =>
+      callRPC("connectUsingSaved", () =>
+        getRPC().request.connectUsingSaved(input),
+      ),
+    deleteSavedConnection: (input: { connectionId: string }) =>
+      callRPC("deleteSavedConnection", () =>
+        getRPC().request.deleteSavedConnection(input),
+      ),
+    disconnect: () =>
+      callRPC("disconnect", () => getRPC().request.disconnect({})),
+    getActiveConnection: () =>
+      callRPC("getActiveConnection", () =>
+        getRPC().request.getActiveConnection({}),
+      ),
+    listSavedConnections: () =>
+      callRPC("listSavedConnections", () =>
+        getRPC().request.listSavedConnections({}),
+      ),
+    saveConnection: (input: { details: ConnectionDetails }) =>
+      callRPC("saveConnection", () => getRPC().request.saveConnection(input)),
+    testConnection: (input: { details: ConnectionDetails }) =>
+      callRPC("testConnection", () => getRPC().request.testConnection(input)),
+    getConnectionCapabilities: () =>
+      callRPC("getConnectionCapabilities", () =>
+        getRPC().request.getConnectionCapabilities({}),
+      ),
+    getVersion: () =>
+      callRPC("getVersion", () => getRPC().request.getVersion({})),
+  },
+  query: {
+    executeSQL: (input: { query: string }) =>
+      callRPC("executeSQL", () => getRPC().request.executeSQL(input)),
+    listNamespaces: () =>
+      callRPC("listNamespaces", () => getRPC().request.listNamespaces({})),
+    listTables: (input: { namespaceName: string }) =>
+      callRPC("listTables", () => getRPC().request.listTables(input)),
+    getTableData: (input: GetTableDataInput) =>
+      callRPC("getTableData", () => getRPC().request.getTableData(input)),
+    getTableSchema: (input: { namespaceName: string; tableName: string }) =>
+      callRPC("getTableSchema", () => getRPC().request.getTableSchema(input)),
+  },
+  metadata: {
+    getDatabaseMetadata: () =>
+      callRPC("getDatabaseMetadata", () =>
+        getRPC().request.getDatabaseMetadata({}),
+      ),
+    extractDatabaseMetadata: (input: ExtractMetadataInput) =>
+      callRPC("extractDatabaseMetadata", () =>
+        getRPC().request.extractDatabaseMetadata(input),
+      ),
+  },
+  settings: {
+    getThemeSettings: () =>
+      callRPC("getThemeSettings", () => getRPC().request.getThemeSettings({})),
+    saveThemeSettings: (input: { settings: ThemeSettings }) =>
+      callRPC("saveThemeSettings", () =>
+        getRPC().request.saveThemeSettings(input),
+      ),
+    getWindowSettings: () =>
+      callRPC("getWindowSettings", () =>
+        getRPC().request.getWindowSettings({}),
+      ),
+    saveWindowSettings: (input: { settings: WindowSettings }) =>
+      callRPC("saveWindowSettings", () =>
+        getRPC().request.saveWindowSettings(input),
+      ),
+  },
+  window: {
+    isMaximised: () =>
+      callRPC("windowIsMaximised", () =>
+        getRPC().request.windowIsMaximised({}),
+      ),
+    maximise: () =>
+      callRPC("windowMaximise", () => getRPC().request.windowMaximise({})),
+    unmaximise: () =>
+      callRPC("windowUnmaximise", () => getRPC().request.windowUnmaximise({})),
+    getClipboardText: () =>
+      callRPC("clipboardGetText", () => getRPC().request.clipboardGetText({})),
+    pickSQLiteFile: (input: { currentPath?: string }) =>
+      callRPC("pickSQLiteFile", () => getRPC().request.pickSQLiteFile(input)),
+  },
+  agent: {
+    startRun: (input: StartAgentRunInput): Promise<StartAgentRunOutput> =>
+      callRPC("startAgentRun", () => getRPC().request.startAgentRun(input)),
+    cancelRun: (input: CancelAgentRunInput) =>
+      callRPC("cancelAgentRun", () => getRPC().request.cancelAgentRun(input)),
+  },
+};
 
-export async function ConnectUsingSaved(
-  connectionId: string,
-): Promise<ConnectionDetails> {
-  return rpcRequest<ConnectionDetails>("ConnectUsingSaved", connectionId);
-}
-
-export async function DeleteSavedConnection(
-  connectionId: string,
-): Promise<void> {
-  return rpcRequest<void>("DeleteSavedConnection", connectionId);
-}
-
-export async function Disconnect(): Promise<void> {
-  return rpcRequest<void>("Disconnect");
-}
-
-export async function ExecuteSQL(query: string): Promise<SQLResult> {
-  return rpcRequest<SQLResult>("ExecuteSQL", query);
-}
-
-export async function ExtractDatabaseMetadata(
-  input: ExtractMetadataInput,
-): Promise<ConnectionMetadata> {
-  return rpcRequest<ConnectionMetadata>("ExtractDatabaseMetadata", input);
-}
-
-export async function GetActiveConnection(): Promise<ConnectionDetails | null> {
-  return rpcRequest<ConnectionDetails | null>("GetActiveConnection");
-}
-
-export async function GetDatabaseMetadata(): Promise<ConnectionMetadata> {
-  return rpcRequest<ConnectionMetadata>("GetDatabaseMetadata");
-}
-
-export async function GetTableData(
-  namespaceName: string,
-  tableName: string,
-  limit: number,
-  offset: number,
-  filterParams: unknown,
-): Promise<TableDataResponse> {
-  return rpcRequest<TableDataResponse>("GetTableData", {
-    namespaceName,
-    tableName,
-    limit,
-    offset,
-    filterParams,
-  });
-}
-
-export async function GetTableSchema(
-  namespaceName: string,
-  tableName: string,
-): Promise<TableSchema> {
-  return rpcRequest<TableSchema>("GetTableSchema", {
-    namespaceName,
-    tableName,
-  });
-}
-
-export async function GetThemeSettings(): Promise<ThemeSettings> {
-  return rpcRequest<ThemeSettings>("GetThemeSettings");
-}
-
-export async function GetVersion(): Promise<string> {
-  return rpcRequest<string>("GetVersion");
-}
-
-export async function GetConnectionCapabilities(): Promise<AdapterCapabilities> {
-  return rpcRequest<AdapterCapabilities>("GetConnectionCapabilities");
-}
-
-export async function GetWindowSettings(): Promise<WindowSettings> {
-  return rpcRequest<WindowSettings>("GetWindowSettings");
-}
-
-export async function ListNamespaces(): Promise<NamespaceRef[]> {
-  return rpcRequest<NamespaceRef[]>("ListNamespaces");
-}
-
-export async function ListSavedConnections(): Promise<
-  Record<string, ConnectionDetails>
-> {
-  return rpcRequest<Record<string, ConnectionDetails>>("ListSavedConnections");
-}
-
-export async function ListTables(namespaceName: string): Promise<TableRef[]> {
-  return rpcRequest<TableRef[]>("ListTables", namespaceName);
-}
-
-export async function SaveConnection(
-  details: ConnectionDetails,
-): Promise<string> {
-  return rpcRequest<string>("SaveConnection", details);
-}
-
-export async function SaveThemeSettings(
-  settings: ThemeSettings,
-): Promise<void> {
-  return rpcRequest<void>("SaveThemeSettings", settings);
-}
-
-export async function SaveWindowSettings(
-  settings: WindowSettings,
-): Promise<void> {
-  return rpcRequest<void>("SaveWindowSettings", settings);
-}
-
-export async function TestConnection(
-  details: ConnectionDetails,
-): Promise<boolean> {
-  return rpcRequest<boolean>("TestConnection", details);
-}
-
-export async function StartAgentRun(
-  input: StartAgentRunInput,
-): Promise<StartAgentRunOutput> {
-  return rpcRequest<StartAgentRunOutput>("StartAgentRun", input);
-}
-
-export async function CancelAgentRun(
-  input: CancelAgentRunInput,
-): Promise<void> {
-  return rpcRequest<void>("CancelAgentRun", input);
-}
-
-export async function WindowIsMaximised(): Promise<boolean> {
-  return rpcRequest<boolean>("WindowIsMaximised");
-}
-
-export async function WindowMaximise(): Promise<void> {
-  return rpcRequest<void>("WindowMaximise");
-}
-
-export async function WindowUnmaximise(): Promise<void> {
-  return rpcRequest<void>("WindowUnmaximise");
-}
-
-export async function ClipboardGetText(): Promise<string> {
-  return rpcRequest<string>("ClipboardGetText");
-}
-
-export async function PickSQLiteFile(currentPath = ""): Promise<string> {
-  return rpcRequest<string>("PickSQLiteFile", { currentPath });
-}
+export type AppAPI = typeof api;
