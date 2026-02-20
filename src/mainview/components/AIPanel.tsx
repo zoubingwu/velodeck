@@ -12,17 +12,142 @@ import React, {
   useRef,
   useState,
 } from "react";
+import ReactMarkdown from "react-markdown";
 import TextareaAutosize from "react-textarea-autosize";
-import { api, onEvent } from "@/bridge";
+import remarkGfm from "remark-gfm";
+import { type AgentSQLApprovalRequestPayload, api, onEvent } from "@/bridge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { LoadingTypewriter } from "@/components/ui/loading-typewriter";
 
 type DisplayBlock = {
   id: string;
-  type: "user" | "event" | "status" | "error" | "system";
+  type: "user" | "assistant" | "status" | "error" | "system";
   content: string;
-  source?: "stdout" | "stderr";
 };
+
+function asRecord(input: unknown): Record<string, unknown> | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  return input as Record<string, unknown>;
+}
+
+function stripAnsi(input: string): string {
+  return input.replace(/\u001b\[[0-9;]*m/g, "").replace(/\r/g, "");
+}
+
+function extractTextFromPart(part: unknown): string[] {
+  const record = asRecord(part);
+  if (!record) {
+    return [];
+  }
+
+  const results: string[] = [];
+  if (typeof record.text === "string" && record.text.trim()) {
+    results.push(record.text.trim());
+  }
+  if (typeof record.markdown === "string" && record.markdown.trim()) {
+    results.push(record.markdown.trim());
+  }
+
+  const content = record.content;
+  if (Array.isArray(content)) {
+    for (const entry of content) {
+      results.push(...extractTextFromPart(entry));
+    }
+  }
+
+  const message = record.message;
+  if (message) {
+    results.push(...extractTextFromPart(message));
+  }
+
+  return results;
+}
+
+function extractAssistantMarkdown(parsed: unknown): string {
+  const payload = asRecord(parsed);
+  if (!payload) {
+    return "";
+  }
+
+  const type = typeof payload.type === "string" ? payload.type : "";
+
+  if (type === "item.completed") {
+    const item = asRecord(payload.item);
+    if (!item) {
+      return "";
+    }
+
+    if (item.type === "reasoning") {
+      return "";
+    }
+
+    return Array.from(new Set(extractTextFromPart(item)))
+      .join("\n\n")
+      .trim();
+  }
+
+  if (type === "response.completed") {
+    const response = asRecord(payload.response);
+    if (!response || !Array.isArray(response.output)) {
+      return "";
+    }
+
+    const chunks: string[] = [];
+    for (const outputItem of response.output) {
+      const item = asRecord(outputItem);
+      if (item?.type === "reasoning") {
+        continue;
+      }
+      chunks.push(...extractTextFromPart(item));
+    }
+    return Array.from(new Set(chunks)).join("\n\n").trim();
+  }
+
+  return "";
+}
+
+function extractUserFacingError(raw: string, parsed: unknown): string {
+  const payload = asRecord(parsed);
+
+  const errorNode = payload ? asRecord(payload.error) : null;
+  if (errorNode && typeof errorNode.message === "string") {
+    return stripAnsi(errorNode.message).trim();
+  }
+
+  if (payload && typeof payload.message === "string") {
+    return stripAnsi(payload.message).trim();
+  }
+
+  const clean = stripAnsi(raw).trim();
+  if (!clean) {
+    return "";
+  }
+
+  if (
+    /^Usage:/i.test(clean) ||
+    /^For more information/i.test(clean) ||
+    /^tip:/i.test(clean)
+  ) {
+    return "";
+  }
+
+  return clean
+    .replace(/^\[[^\]]+\]\s*/g, "")
+    .replace(/\b(ERROR|WARN|INFO)\b[: ]*/gi, "")
+    .trim();
+}
 
 interface AIPanelProps {
   opened?: boolean;
@@ -33,7 +158,12 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [maxRows, setMaxRows] = useState(2);
   const [displayBlocks, setDisplayBlocks] = useState<DisplayBlock[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<
+    AgentSQLApprovalRequestPayload[]
+  >([]);
+  const [isResolvingApproval, setIsResolvingApproval] = useState(false);
   const currentRunIdRef = useRef<string>("");
+  const lastAssistantMessageRef = useRef<string>("");
   const pendingStartRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const uniqueId = useId();
@@ -43,6 +173,7 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
   });
 
   const clearMessages = useMemoizedFn(() => {
+    lastAssistantMessageRef.current = "";
     setDisplayBlocks([
       {
         id: `${uniqueId}-${Date.now()}-session`,
@@ -59,6 +190,7 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
 
     const prompt = inputValue.trim();
     setInputValue("");
+    lastAssistantMessageRef.current = "";
 
     appendDisplayBlock({
       id: `${uniqueId}-${Date.now()}-user`,
@@ -72,11 +204,6 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
       const { runId } = await api.agent.startRun({ prompt });
       currentRunIdRef.current = runId;
       pendingStartRef.current = false;
-      appendDisplayBlock({
-        id: `${uniqueId}-${Date.now()}-status`,
-        type: "status",
-        content: `[run:${runId}] started`,
-      });
     } catch (error) {
       pendingStartRef.current = false;
       setIsLoading(false);
@@ -112,6 +239,39 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
     }
   });
 
+  const activeApproval = pendingApprovals[0] || null;
+
+  const resolveActiveApproval = useMemoizedFn(
+    async (decision: "approved" | "rejected") => {
+      const approval = pendingApprovals[0];
+      if (!approval || isResolvingApproval) {
+        return;
+      }
+
+      setIsResolvingApproval(true);
+      try {
+        await api.agent.resolveSqlApproval({
+          runId: approval.runId,
+          approvalId: approval.approvalId,
+          decision,
+          reason:
+            decision === "rejected" ? "rejected by user" : "approved by user",
+        });
+      } catch (error) {
+        appendDisplayBlock({
+          id: `${uniqueId}-${Date.now()}-approval-error`,
+          type: "error",
+          content:
+            error instanceof Error
+              ? error.message
+              : String(error ?? "failed to resolve SQL approval"),
+        });
+      } finally {
+        setIsResolvingApproval(false);
+      }
+    },
+  );
+
   useEffect(() => {
     const cleanupEvent = onEvent("agent:run:event", (eventPayload) => {
       if (!currentRunIdRef.current && pendingStartRef.current) {
@@ -122,12 +282,33 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
         return;
       }
 
-      appendDisplayBlock({
-        id: `${uniqueId}-${Date.now()}-event`,
-        type: "event",
-        source: eventPayload.source,
-        content: eventPayload.raw,
-      });
+      const assistantMarkdown = extractAssistantMarkdown(eventPayload.parsed);
+      if (assistantMarkdown) {
+        if (assistantMarkdown === lastAssistantMessageRef.current) {
+          return;
+        }
+        lastAssistantMessageRef.current = assistantMarkdown;
+        appendDisplayBlock({
+          id: `${uniqueId}-${Date.now()}-assistant`,
+          type: "assistant",
+          content: assistantMarkdown,
+        });
+        return;
+      }
+
+      if (eventPayload.source === "stderr") {
+        const message = extractUserFacingError(
+          eventPayload.raw,
+          eventPayload.parsed,
+        );
+        if (message) {
+          appendDisplayBlock({
+            id: `${uniqueId}-${Date.now()}-stderr`,
+            type: "error",
+            content: message,
+          });
+        }
+      }
     });
 
     const cleanupStatus = onEvent("agent:run:status", (statusPayload) => {
@@ -139,11 +320,15 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
         return;
       }
 
-      appendDisplayBlock({
-        id: `${uniqueId}-${Date.now()}-status`,
-        type: "status",
-        content: JSON.stringify(statusPayload),
-      });
+      if (statusPayload.status === "failed") {
+        appendDisplayBlock({
+          id: `${uniqueId}-${Date.now()}-status-failed`,
+          type: "error",
+          content:
+            statusPayload.error ||
+            `Agent run failed (exit code ${statusPayload.exitCode ?? "unknown"})`,
+        });
+      }
 
       if (
         statusPayload.status === "completed" ||
@@ -152,13 +337,47 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
       ) {
         pendingStartRef.current = false;
         setIsLoading(false);
+        setPendingApprovals((prev) =>
+          prev.filter((item) => item.runId !== statusPayload.runId),
+        );
+        lastAssistantMessageRef.current = "";
         currentRunIdRef.current = "";
       }
     });
 
+    const cleanupApprovalRequested = onEvent(
+      "agent:sql:approval:requested",
+      (approvalPayload) => {
+        if (!currentRunIdRef.current && pendingStartRef.current) {
+          currentRunIdRef.current = approvalPayload.runId;
+        }
+
+        if (approvalPayload.runId !== currentRunIdRef.current) {
+          return;
+        }
+
+        setPendingApprovals((prev) => [...prev, approvalPayload]);
+      },
+    );
+
+    const cleanupApprovalResolved = onEvent(
+      "agent:sql:approval:resolved",
+      (resolvedPayload) => {
+        setPendingApprovals((prev) =>
+          prev.filter((item) => item.approvalId !== resolvedPayload.approvalId),
+        );
+
+        if (resolvedPayload.runId !== currentRunIdRef.current) {
+          return;
+        }
+      },
+    );
+
     return () => {
       cleanupEvent();
       cleanupStatus();
+      cleanupApprovalRequested();
+      cleanupApprovalResolved();
     };
   }, [appendDisplayBlock, uniqueId]);
 
@@ -201,15 +420,14 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
             {message.content}
           </div>
         );
-      case "event":
+      case "assistant":
         return (
           <div
-            className={`event ${baseClasses} text-xs p-2 bg-background border border-muted rounded`}
+            className={`assistant ${baseClasses} bg-background border border-muted rounded p-3 prose prose-sm max-w-none`}
           >
-            <div className="text-muted-foreground mb-1">{message.source}</div>
-            <pre className="whitespace-pre-wrap break-words">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {message.content}
-            </pre>
+            </ReactMarkdown>
           </div>
         );
       case "status":
@@ -315,6 +533,46 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
           </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={Boolean(activeApproval)}
+        onOpenChange={() => {
+          /* approval dialog is controlled by backend state */
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve write SQL?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This statement was classified as write SQL and requires your
+              confirmation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <pre className="max-h-64 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap break-words">
+            {activeApproval?.query || ""}
+          </pre>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={isResolvingApproval}
+              onClick={(event) => {
+                event.preventDefault();
+                void resolveActiveApproval("rejected");
+              }}
+            >
+              Reject
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isResolvingApproval}
+              onClick={(event) => {
+                event.preventDefault();
+                void resolveActiveApproval("approved");
+              }}
+            >
+              Approve
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

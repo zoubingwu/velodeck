@@ -75,6 +75,21 @@ const LAYOUT_AI_PANEL_VISIBLE_KEY = "layout:aiPanelVisible";
 
 const SHOW_SYSTEM_DATABASES = false;
 
+function databaseKindLabel(kind?: ConnectionDetails["kind"]): string {
+  switch (kind) {
+    case "mysql":
+      return "MySQL/TiDB";
+    case "postgres":
+      return "PostgreSQL";
+    case "sqlite":
+      return "SQLite";
+    case "bigquery":
+      return "BigQuery";
+    default:
+      return "Database";
+  }
+}
+
 const MainDataView = ({
   onClose,
   connectionDetails,
@@ -259,9 +274,9 @@ const MainDataView = ({
       "metadata:extraction:completed",
       async (metadata) => {
         appendActivityLog("Indexing metadata completed.");
-        if (metadata.version) {
-          appendActivityLog(`Connected to ${metadata.version}`);
-        }
+        const kindLabel = databaseKindLabel(connectionDetails?.kind);
+        const versionLabel = metadata.version ? ` ${metadata.version}` : "";
+        appendActivityLog(`Connected to ${kindLabel}${versionLabel}`);
 
         mergeDatabaseTree(
           Object.keys(metadata.namespaces).map((namespaceName) => ({
@@ -281,7 +296,12 @@ const MainDataView = ({
       cleanupFailed();
       cleanupCompleted();
     };
-  }, [appendActivityLog, mergeDatabaseTree, triggerIndexer]);
+  }, [
+    appendActivityLog,
+    connectionDetails?.kind,
+    mergeDatabaseTree,
+    triggerIndexer,
+  ]);
 
   const { mutateAsync: fetchTables } = useMutation({
     mutationFn: (namespaceName: string) =>
