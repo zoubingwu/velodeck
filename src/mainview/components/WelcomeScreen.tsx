@@ -1,24 +1,20 @@
+import type { ConnectionDetails } from "@shared/contracts";
 import { useMount } from "ahooks";
 import { formatDistanceToNow } from "date-fns";
 import { Loader, PlusCircleIcon, SettingsIcon } from "lucide-react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { services } from "@/bridge";
-import {
-  ConnectUsingSaved,
-  DeleteSavedConnection,
-  ListSavedConnections,
-} from "@/bridge";
+import { api } from "@/bridge";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectionFormDialog } from "./ConnectionForm";
 import SettingsModal from "./SettingModal";
 
-type SavedConnectionsMap = Record<string, services.ConnectionDetails>;
+type SavedConnectionsMap = Record<string, ConnectionDetails>;
 
 interface WelcomeScreenProps {
-  onConnected: (details: services.ConnectionDetails) => void;
+  onConnected: (details: ConnectionDetails) => void;
 }
 
 const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
@@ -33,12 +29,12 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
   const [editingConnection, setEditingConnection] = useState<{
     id: string;
     name: string;
-    connection: services.ConnectionDetails;
+    connection: ConnectionDetails;
   } | null>(null);
 
   const fetchConnections = useCallback(async () => {
     try {
-      const connections = await ListSavedConnections();
+      const connections = await api.connection.listSavedConnections();
       setSavedConnections(connections || {});
     } catch (error: any) {
       toast.error("Failed to load saved connections", {
@@ -57,7 +53,7 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
   const handleConnect = async (connectionId: string) => {
     setConnectingId(connectionId);
     try {
-      const details = await ConnectUsingSaved(connectionId);
+      const details = await api.connection.connectUsingSaved({ connectionId });
       onConnected(details);
     } catch (error: any) {
       console.error(`Connect using ${connectionId} error:`, error);
@@ -69,7 +65,7 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
 
   const handleDelete = async (connectionId: string) => {
     try {
-      await DeleteSavedConnection(connectionId);
+      await api.connection.deleteSavedConnection({ connectionId });
       const connectionName =
         savedConnections[connectionId]?.name || connectionId;
       toast.success("Connection Deleted", {
@@ -88,10 +84,7 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
     setIsFormOpen(true);
   };
 
-  const handleEdit = (
-    connectionId: string,
-    details: services.ConnectionDetails,
-  ) => {
+  const handleEdit = (connectionId: string, details: ConnectionDetails) => {
     setIsEditing(true);
     setEditingConnection({
       id: connectionId,

@@ -1,3 +1,8 @@
+import type {
+  AdapterCapabilities,
+  ConnectionDetails,
+  NamespaceRef,
+} from "@shared/contracts";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import {
   type CellContext,
@@ -11,16 +16,7 @@ import {
 } from "@tanstack/react-table";
 import { useLocalStorageState, useMemoizedFn } from "ahooks";
 import { Allotment as ReactSplitView } from "allotment";
-import type { services } from "@/bridge";
-import {
-  EventsOn,
-  ExtractDatabaseMetadata,
-  GetConnectionCapabilities,
-  GetDatabaseMetadata,
-  GetTableData,
-  ListNamespaces,
-  ListTables,
-} from "@/bridge";
+import { api, onEvent } from "@/bridge";
 import { AIPanel } from "@/components/AIPanel";
 import { DatabaseTree, type DatabaseTreeItem } from "@/components/DatabaseTree";
 import { DataTablePagination } from "@/components/DataTablePagination";
@@ -84,7 +80,7 @@ const MainDataView = ({
   connectionDetails,
 }: {
   onClose: () => void;
-  connectionDetails: services.ConnectionDetails | null;
+  connectionDetails: ConnectionDetails | null;
 }) => {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [databaseTree, setDatabaseTree] = useImmer<DatabaseTreeData>([]);
@@ -164,23 +160,22 @@ const MainDataView = ({
     },
   );
 
-  const { data: connectionCapabilities } = useQuery<
-    services.AdapterCapabilities,
-    Error
-  >({
-    queryKey: ["connectionCapabilities", connectionDetails?.id],
-    queryFn: GetConnectionCapabilities,
-    enabled: Boolean(connectionDetails?.id),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
+  const { data: connectionCapabilities } = useQuery<AdapterCapabilities, Error>(
+    {
+      queryKey: ["connectionCapabilities", connectionDetails?.id],
+      queryFn: () => api.connection.getConnectionCapabilities(),
+      enabled: Boolean(connectionDetails?.id),
+      staleTime: Number.POSITIVE_INFINITY,
+    },
+  );
 
   const {
     data: namespaces = [],
     isLoading: isLoadingNamespaces,
     error: namespacesError,
-  } = useQuery<services.NamespaceRef[], Error>({
+  } = useQuery<NamespaceRef[], Error>({
     queryKey: ["namespaces"],
-    queryFn: ListNamespaces,
+    queryFn: () => api.query.listNamespaces(),
     staleTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -200,15 +195,17 @@ const MainDataView = ({
         return;
       }
 
-      void ExtractDatabaseMetadata({
-        connectionId,
-        force,
-        namespaceName: namespaceName ?? "",
-      }).catch((error) => {
-        const message =
-          error instanceof Error ? error.message : String(error ?? "unknown");
-        appendActivityLog(`Indexing metadata failed: ${message}`);
-      });
+      void api.metadata
+        .extractDatabaseMetadata({
+          connectionId,
+          force,
+          namespaceName: namespaceName ?? "",
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error ? error.message : String(error ?? "unknown");
+          appendActivityLog(`Indexing metadata failed: ${message}`);
+        });
     },
   );
 
@@ -231,7 +228,7 @@ const MainDataView = ({
 
     const checkMetadataAndTriggerIndexer = async () => {
       try {
-        const metadata = await GetDatabaseMetadata();
+        const metadata = await api.metadata.getDatabaseMetadata();
         const existing = Object.keys(metadata?.namespaces || {});
         const missing = visibleNamespaces.filter(
           (name) => !existing.includes(name),
@@ -250,7 +247,7 @@ const MainDataView = ({
   }, [namespaces, connectionDetails?.kind, mergeDatabaseTree, triggerIndexer]);
 
   useEffect(() => {
-    const cleanupFailed = EventsOn("metadata:extraction:failed", (payload) => {
+    const cleanupFailed = onEvent("metadata:extraction:failed", (payload) => {
       const error =
         typeof payload === "string"
           ? payload
@@ -258,10 +255,9 @@ const MainDataView = ({
       appendActivityLog(`Indexing metadata failed: ${error}`);
     });
 
-    const cleanupCompleted = EventsOn(
+    const cleanupCompleted = onEvent(
       "metadata:extraction:completed",
-      async (payload) => {
-        const metadata = payload as services.ConnectionMetadata;
+      async (metadata) => {
         appendActivityLog("Indexing metadata completed.");
         if (metadata.version) {
           appendActivityLog(`Connected to ${metadata.version}`);
@@ -288,7 +284,8 @@ const MainDataView = ({
   }, [appendActivityLog, mergeDatabaseTree, triggerIndexer]);
 
   const { mutateAsync: fetchTables } = useMutation({
-    mutationFn: (namespaceName: string) => ListTables(namespaceName),
+    mutationFn: (namespaceName: string) =>
+      api.query.listTables({ namespaceName }),
     onMutate: (namespaceName: string) => {
       if (
         !databaseTree.find((db) => db.name === namespaceName)?.tables?.length
@@ -333,13 +330,13 @@ const MainDataView = ({
 
       try {
         appendActivityLog(`Fetching data from ${titleTarget}...`);
-        const res = await GetTableData(
-          currentNamespace,
-          currentTable,
-          currentPageSize,
-          currentPageIndex * currentPageSize,
-          filterObject,
-        );
+        const res = await api.query.getTableData({
+          namespaceName: currentNamespace,
+          tableName: currentTable,
+          limit: currentPageSize,
+          offset: currentPageIndex * currentPageSize,
+          filterParams: filterObject,
+        });
         appendActivityLog(`Fetched data from ${titleTarget}`);
         return res;
       } catch (error: any) {

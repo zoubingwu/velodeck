@@ -1,6 +1,6 @@
+import type { ConnectionDetails } from "@shared/contracts";
 import { Clock, Database, Loader, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
-import type { services } from "@/bridge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,15 +30,15 @@ import {
 type ConnectionCardProps = {
   id: string;
   name: string;
-  details: services.ConnectionDetails;
+  details: ConnectionDetails;
   onConnect: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onEdit: (id: string, details: services.ConnectionDetails) => void;
+  onEdit: (id: string, details: ConnectionDetails) => void;
   isConnecting: boolean;
   lastUsed: string;
 };
 
-function connectionSummary(details: services.ConnectionDetails): string {
+function connectionSummary(details: ConnectionDetails): string {
   switch (details.kind) {
     case "mysql":
     case "postgres":

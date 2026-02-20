@@ -1,8 +1,8 @@
+import type { ConnectionDetails } from "@shared/contracts";
 import { Loader } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { services } from "@/bridge";
-import { PickSQLiteFile, SaveConnection, TestConnection } from "@/bridge";
+import { api } from "@/bridge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -22,22 +22,19 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-type ConnectionKind = services.ConnectionDetails["kind"];
+type ConnectionKind = ConnectionDetails["kind"];
 
 type ConnectionFormDialogProps = {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onConnectionSaved: (
-    id: string,
-    connection: services.ConnectionDetails,
-  ) => void;
+  onConnectionSaved: (id: string, connection: ConnectionDetails) => void;
   defaultValues: {
     id: string;
     name: string;
-    connection: services.ConnectionDetails;
+    connection: ConnectionDetails;
   } | null;
   isEditing?: boolean;
-  savedConnections: Record<string, services.ConnectionDetails>;
+  savedConnections: Record<string, ConnectionDetails>;
 };
 
 const falseyTLSValues = new Set([
@@ -50,9 +47,7 @@ const falseyTLSValues = new Set([
   "none",
 ]);
 
-function createDefaultConnection(
-  kind: ConnectionKind,
-): services.ConnectionDetails {
+function createDefaultConnection(kind: ConnectionKind): ConnectionDetails {
   switch (kind) {
     case "mysql":
       return {
@@ -101,9 +96,7 @@ function createDefaultConnection(
   }
 }
 
-function parseConnectionString(
-  connectionString: string,
-): services.ConnectionDetails {
+function parseConnectionString(connectionString: string): ConnectionDetails {
   const input = connectionString.trim();
   if (!input) {
     throw new Error("Connection string cannot be empty.");
@@ -170,11 +163,8 @@ function parseConnectionString(
 }
 
 function isHostConnection(
-  connection: services.ConnectionDetails,
-): connection is Extract<
-  services.ConnectionDetails,
-  { kind: "mysql" | "postgres" }
-> {
+  connection: ConnectionDetails,
+): connection is Extract<ConnectionDetails, { kind: "mysql" | "postgres" }> {
   return connection.kind === "mysql" || connection.kind === "postgres";
 }
 
@@ -192,7 +182,7 @@ export function ConnectionFormDialog({
   );
 
   const [formState, setFormState] =
-    useState<services.ConnectionDetails>(initialConnection);
+    useState<ConnectionDetails>(initialConnection);
   const [connectionName, setConnectionName] = useState<string>(
     defaultValues?.name || "",
   );
@@ -224,17 +214,17 @@ export function ConnectionFormDialog({
         ...base,
         id: prev.id,
         name: prev.name,
-      } as services.ConnectionDetails;
+      } as ConnectionDetails;
     });
   };
 
-  const updateFormState = (patch: Partial<services.ConnectionDetails>) => {
+  const updateFormState = (patch: Partial<ConnectionDetails>) => {
     setFormState(
       (prev) =>
         ({
           ...prev,
           ...patch,
-        }) as services.ConnectionDetails,
+        }) as ConnectionDetails,
     );
   };
 
@@ -247,7 +237,7 @@ export function ConnectionFormDialog({
             ...parsed,
             id: prev.id,
             name: prev.name,
-          }) as services.ConnectionDetails,
+          }) as ConnectionDetails,
       );
       setConnectionString("");
       setIsImportPopoverOpen(false);
@@ -272,7 +262,9 @@ export function ConnectionFormDialog({
     }
 
     try {
-      const selectedPath = await PickSQLiteFile(formState.filePath || "");
+      const selectedPath = await api.window.pickSQLiteFile({
+        currentPath: formState.filePath || "",
+      });
       if (!selectedPath) {
         return;
       }
@@ -293,7 +285,9 @@ export function ConnectionFormDialog({
   const handleTestConnection = async () => {
     setIsTesting(true);
     try {
-      const success = await TestConnection(formState);
+      const success = await api.connection.testConnection({
+        details: formState,
+      });
       if (success) {
         toast.success("Connection Successful", {
           description: "Successfully connected to the database.",
@@ -348,13 +342,15 @@ export function ConnectionFormDialog({
         return;
       }
 
-      const connectionToSave: services.ConnectionDetails = {
+      const connectionToSave: ConnectionDetails = {
         ...formState,
         name,
         id: isEditing ? defaultValues?.id || "" : "",
       };
 
-      const savedConnectionId = await SaveConnection(connectionToSave);
+      const savedConnectionId = await api.connection.saveConnection({
+        details: connectionToSave,
+      });
 
       toast.success("Connection Saved", {
         description: `Connection '${name}' saved successfully.`,

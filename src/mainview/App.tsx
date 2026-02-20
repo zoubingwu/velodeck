@@ -1,7 +1,7 @@
+import type { ConnectionDetails } from "@shared/contracts";
 import { useMemoizedFn } from "ahooks";
 import { useEffect, useState } from "react";
-import type { services } from "@/bridge";
-import { Disconnect, EventsOn } from "@/bridge";
+import { api, onEvent } from "@/bridge";
 import MainDataView from "@/components/MainDataView";
 import WelcomeScreen from "@/components/WelcomeScreen";
 
@@ -10,14 +10,12 @@ type ViewState = "welcome" | "main";
 function App() {
   const [currentView, setCurrentView] = useState<ViewState>("welcome");
   const [connectionDetails, setConnectionDetails] =
-    useState<services.ConnectionDetails | null>(null);
+    useState<ConnectionDetails | null>(null);
 
-  const navigateToMain = useMemoizedFn(
-    (details: services.ConnectionDetails) => {
-      setConnectionDetails(details);
-      setCurrentView("main");
-    },
-  );
+  const navigateToMain = useMemoizedFn((details: ConnectionDetails) => {
+    setConnectionDetails(details);
+    setCurrentView("main");
+  });
 
   const handleDisconnect = useMemoizedFn(() => {
     setConnectionDetails(null);
@@ -25,7 +23,7 @@ function App() {
   });
 
   useEffect(() => {
-    const cleanupDisconnected = EventsOn("connection:disconnected", () => {
+    const cleanupDisconnected = onEvent("connection:disconnected", () => {
       handleDisconnect();
     });
 
@@ -35,7 +33,7 @@ function App() {
   }, [handleDisconnect]);
 
   const triggerDisconnect = useMemoizedFn(() => {
-    void Disconnect();
+    void api.connection.disconnect();
   });
 
   const renderView = () => {

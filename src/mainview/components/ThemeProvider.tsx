@@ -6,7 +6,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { GetThemeSettings, SaveThemeSettings } from "@/bridge";
+import { api } from "@/bridge";
 
 // Define the available theme names. These should match CSS classes.
 // These are the *base* themes you switch between.
@@ -101,7 +101,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Query to fetch initial settings from backend
   const { data: savedSettings } = useQuery({
     queryKey: ["themeSettings"],
-    queryFn: GetThemeSettings,
+    queryFn: () => api.settings.getThemeSettings(),
     refetchOnWindowFocus: false,
   });
 
@@ -137,8 +137,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Persist theme changes to backend
   const persistTheme = async (newBase: string, newMode: ThemeMode) => {
     try {
-      // Assuming a SaveThemeSettings function exists in your Go backend
-      await SaveThemeSettings({ baseTheme: newBase, mode: newMode });
+      await api.settings.saveThemeSettings({
+        settings: { baseTheme: newBase, mode: newMode },
+      });
       console.log("Theme settings saved:", {
         baseTheme: newBase,
         mode: newMode,

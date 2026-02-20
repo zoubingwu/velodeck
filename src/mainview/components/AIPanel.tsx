@@ -13,8 +13,7 @@ import React, {
   useState,
 } from "react";
 import TextareaAutosize from "react-textarea-autosize";
-import type { services } from "@/bridge";
-import { CancelAgentRun, EventsOn, StartAgentRun } from "@/bridge";
+import { api, onEvent } from "@/bridge";
 import { Button } from "@/components/ui/button";
 import { LoadingTypewriter } from "@/components/ui/loading-typewriter";
 
@@ -70,7 +69,7 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
     try {
       pendingStartRef.current = true;
       setIsLoading(true);
-      const { runId } = await StartAgentRun({ prompt });
+      const { runId } = await api.agent.startRun({ prompt });
       currentRunIdRef.current = runId;
       pendingStartRef.current = false;
       appendDisplayBlock({
@@ -99,7 +98,7 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
     }
 
     try {
-      await CancelAgentRun({ runId });
+      await api.agent.cancelRun({ runId });
     } catch (error) {
       appendDisplayBlock({
         id: `${uniqueId}-${Date.now()}-cancel-error`,
@@ -114,9 +113,7 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
   });
 
   useEffect(() => {
-    const cleanupEvent = EventsOn("agent:run:event", (payload) => {
-      const eventPayload = payload as services.AgentRunEventPayload;
-
+    const cleanupEvent = onEvent("agent:run:event", (eventPayload) => {
       if (!currentRunIdRef.current && pendingStartRef.current) {
         currentRunIdRef.current = eventPayload.runId;
       }
@@ -133,9 +130,7 @@ export const AIPanel = ({ opened }: AIPanelProps) => {
       });
     });
 
-    const cleanupStatus = EventsOn("agent:run:status", (payload) => {
-      const statusPayload = payload as services.AgentRunStatusPayload;
-
+    const cleanupStatus = onEvent("agent:run:status", (statusPayload) => {
       if (!currentRunIdRef.current && pendingStartRef.current) {
         currentRunIdRef.current = statusPayload.runId;
       }
