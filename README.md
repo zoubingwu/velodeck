@@ -13,7 +13,7 @@ You can download the latest release from the [GitHub Releases page](https://gith
 - Desktop runtime: Electrobun
 - Backend runtime: Bun + TypeScript
 - Frontend: React + Vite
-- Storage: `~/.velodeck/config.json` and `~/.velodeck/metadata/*.json`
+- Storage: `~/.velodeck/config.json` and `~/.velodeck/.agents/skills/db-index/references/<connection-locator>/*.md`
 
 ## Development
 

@@ -11,7 +11,9 @@
 ## Data Model and Persistence
 
 - Config file: `~/.velodeck/config.json`
-- Metadata files: `~/.velodeck/metadata/<connection-id>.json`
+- Metadata index catalog: `~/.velodeck/.agents/skills/db-index/references/catalog.md`
+- Metadata connection index: `~/.velodeck/.agents/skills/db-index/references/<connection-locator>/index.md`
+- Metadata namespace docs: `~/.velodeck/.agents/skills/db-index/references/<connection-locator>/<namespace-file>.md`
 - Log file: `~/.velodeck/velodeck.log`
 - Agent skills: `~/.velodeck/.agents/skills`
 - Agent project MCP config: `~/.velodeck/.codex/config.toml`
@@ -44,7 +46,7 @@
 - `src/bun/services/db-adapters/postgres-adapter.ts`: PostgreSQL adapter implementation
 - `src/bun/services/db-adapters/sqlite-adapter.ts`: SQLite adapter implementation
 - `src/bun/services/db-adapters/bigquery-adapter.ts`: BigQuery adapter implementation
-- `src/bun/services/metadata-service.ts`: metadata extraction and persistence
+- `src/bun/services/metadata-service.ts`: metadata extraction and markdown index persistence under `.agents/skills/db-index/references`
 - `src/bun/services/session-service.ts`: active connection state
 - `src/bun/services/logger-service.ts`: file + stderr logging
 - `src/bun/services/agent-service.ts`: codex exec runner + `.agents/skills` bootstrap + MCP wiring
