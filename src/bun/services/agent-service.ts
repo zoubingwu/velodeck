@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -39,29 +39,38 @@ const CODEX_BASE_ARGS = [
 
 const DB_INDEX_SKILL_TEMPLATE = `---
 name: db-index
-description: Inspect active database schema and generate markdown index files in references/. Use when users ask for schema inventory, relationship mapping, table documentation, or database index docs.
+description: Use generated markdown schema indexes to understand complete table structure and write accurate SQL.
 compatibility: Requires VeloDeck MCP tool velodeck_sql_execute and write access under ~/.velodeck/.agents/skills/db-index/references.
 metadata:
   owner: velodeck
-  version: "1.0"
+  version: "3.0"
 ---
 
-# VeloDeck DB Index Skill
+# VeloDeck Schema Index Skill
 
-Use this skill when you need to inspect database structure and generate markdown index documents.
+Use this skill when you need full schema context before writing SQL.
+
+## Primary Goal
+- Locate the correct markdown index files first.
+- Use those files to recover complete table structures (columns, PK/FK, indexes, comments).
+- Then write SQL that matches the schema exactly.
+- Prefer markdown tables/lists as the canonical format. Do not rely on JSON blobs.
+
+## Index Directory Layout
+- \`references/catalog.md\`: global directory of all saved connections and their index files.
+- \`references/<connection-locator>/index.md\`: directory for one connection, mapping each namespace/database to a markdown file.
+- \`references/<connection-locator>/<namespace-file>.md\`: full metadata for one namespace/database.
+
+## SQL Workflow
+1. Open \`references/catalog.md\` and locate the active connection index file.
+2. Open the connection index file and locate the target namespace/database markdown file.
+3. Read the namespace markdown file to verify table names, column types, PK/FK, and indexes.
+4. Draft SQL based on the indexed structure.
+5. If required metadata is missing or stale, refresh it via MCP SQL introspection and update the same files under \`references/\`.
 
 ## Tooling
-- Use MCP tool \`velodeck_sql_execute\` to run SQL.
-- Read SQL runs directly.
+- Use MCP tool \`velodeck_sql_execute\` for SQL execution.
 - Write SQL requires explicit user approval.
-
-## Output
-Write generated index documents under \`./references\` in this skill directory.
-
-## Minimum artifacts
-- \`schema-overview.md\`: namespace/table inventory
-- \`table-relationships.md\`: primary/foreign key relationships
-- \`table-columns.md\`: key column dictionary with types
 `;
 
 export class AgentService {
@@ -457,24 +466,6 @@ export class AgentService {
     mkdirSync(referencesDir, { recursive: true, mode: 0o750 });
 
     const skillDocPath = join(dbIndexSkillDir, "SKILL.md");
-    if (!existsSync(skillDocPath)) {
-      writeFileSync(skillDocPath, DB_INDEX_SKILL_TEMPLATE, { mode: 0o600 });
-      return;
-    }
-
-    const existing = readFileSync(skillDocPath, "utf8");
-    if (!this.hasFrontmatter(existing)) {
-      writeFileSync(skillDocPath, DB_INDEX_SKILL_TEMPLATE, { mode: 0o600 });
-    }
-  }
-
-  private hasFrontmatter(content: string): boolean {
-    const trimmed = content.trimStart();
-    if (!trimmed.startsWith("---\n")) {
-      return false;
-    }
-
-    const closing = trimmed.indexOf("\n---", 4);
-    return closing > 0;
+    writeFileSync(skillDocPath, DB_INDEX_SKILL_TEMPLATE, { mode: 0o600 });
   }
 }
