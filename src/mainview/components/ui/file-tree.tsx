@@ -239,7 +239,7 @@ const Folder = forwardRef<
       >
         <AccordionPrimitive.Trigger
           className={cn(
-            `flex items-center gap-1 rounded-md text-sm`,
+            `flex w-full items-center justify-start gap-1 rounded-md px-1 text-left text-sm`,
             className,
             {
               "bg-muted rounded-md": isSelect && isSelectable,
@@ -310,7 +310,7 @@ const File = forwardRef<
         type="button"
         disabled={!isSelectable}
         className={cn(
-          "flex w-fit items-center gap-1 rounded-lg text-sm duration-200 ease-in-out px-1",
+          "flex w-full items-center justify-start gap-1 rounded-lg px-1 text-left text-sm duration-200 ease-in-out",
           {
             "bg-muted": isSelected && isSelectable,
           },
