@@ -1,4 +1,4 @@
-import type { ServerSideFilter } from "../../../shared/contracts";
+import type { ServerSideFilter } from "../../shared/contracts";
 
 export function normalizeValue(value: unknown): unknown {
   if (Buffer.isBuffer(value)) {

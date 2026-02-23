@@ -1,18 +1,19 @@
 import type {
-  AdapterCapabilities,
   AgentSQLApprovalResolveInput,
   AppEventPayloadMap,
   CancelAgentRunInput,
-  ConnectionDetails,
   ConnectionMetadata,
+  ConnectionProfile,
+  ConnectorCapabilities,
+  ConnectorManifest,
+  DataEntityRef,
+  EntityDataPage,
+  EntitySchema,
+  ExplorerNode,
   ExtractMetadataInput,
-  GetTableDataInput,
-  NamespaceRef,
+  ReadEntityInput,
   SQLResult,
   StartAgentRunOutput,
-  TableDataResponse,
-  TableRef,
-  TableSchema,
   ThemeSettings,
   WindowSettings,
 } from "./contracts";
@@ -28,12 +29,12 @@ type RPCSideSchema<Requests, Messages> = {
 
 type BunRequests = {
   testConnection: {
-    params: { details: ConnectionDetails };
+    params: { profile: ConnectionProfile };
     response: boolean;
   };
   connectUsingSaved: {
     params: { connectionId: string };
-    response: ConnectionDetails;
+    response: ConnectionProfile;
   };
   disconnect: {
     params: EmptyParams;
@@ -41,14 +42,14 @@ type BunRequests = {
   };
   getActiveConnection: {
     params: EmptyParams;
-    response: ConnectionDetails | null;
+    response: ConnectionProfile | null;
   };
   listSavedConnections: {
     params: EmptyParams;
-    response: Record<string, ConnectionDetails>;
+    response: Record<string, ConnectionProfile>;
   };
   saveConnection: {
-    params: { details: ConnectionDetails };
+    params: { profile: ConnectionProfile };
     response: string;
   };
   deleteSavedConnection: {
@@ -65,23 +66,23 @@ type BunRequests = {
   };
   getConnectionCapabilities: {
     params: EmptyParams;
-    response: AdapterCapabilities;
+    response: ConnectorCapabilities;
   };
-  listNamespaces: {
+  listConnectors: {
     params: EmptyParams;
-    response: NamespaceRef[];
+    response: ConnectorManifest[];
   };
-  listTables: {
-    params: { namespaceName: string };
-    response: TableRef[];
+  listExplorerNodes: {
+    params: { parentNodeId?: string | null };
+    response: ExplorerNode[];
   };
-  getTableData: {
-    params: GetTableDataInput;
-    response: TableDataResponse;
+  readEntity: {
+    params: ReadEntityInput;
+    response: EntityDataPage;
   };
-  getTableSchema: {
-    params: { namespaceName: string; tableName: string };
-    response: TableSchema;
+  getEntitySchema: {
+    params: { entity: DataEntityRef };
+    response: EntitySchema;
   };
   getThemeSettings: {
     params: EmptyParams;
@@ -99,11 +100,11 @@ type BunRequests = {
     params: { settings: WindowSettings };
     response: void;
   };
-  getDatabaseMetadata: {
+  getConnectionMetadata: {
     params: EmptyParams;
     response: ConnectionMetadata;
   };
-  extractDatabaseMetadata: {
+  extractConnectionMetadata: {
     params: ExtractMetadataInput;
     response: ConnectionMetadata;
   };

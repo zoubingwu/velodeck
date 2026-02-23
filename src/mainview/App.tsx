@@ -1,4 +1,4 @@
-import type { ConnectionDetails } from "@shared/contracts";
+import type { ConnectionProfile } from "@shared/contracts";
 import { useMemoizedFn } from "ahooks";
 import { useEffect, useState } from "react";
 import { api, onEvent } from "@/bridge";
@@ -9,16 +9,16 @@ type ViewState = "welcome" | "main";
 
 function App() {
   const [currentView, setCurrentView] = useState<ViewState>("welcome");
-  const [connectionDetails, setConnectionDetails] =
-    useState<ConnectionDetails | null>(null);
+  const [connectionProfile, setConnectionProfile] =
+    useState<ConnectionProfile | null>(null);
 
-  const navigateToMain = useMemoizedFn((details: ConnectionDetails) => {
-    setConnectionDetails(details);
+  const navigateToMain = useMemoizedFn((details: ConnectionProfile) => {
+    setConnectionProfile(details);
     setCurrentView("main");
   });
 
   const handleDisconnect = useMemoizedFn(() => {
-    setConnectionDetails(null);
+    setConnectionProfile(null);
     setCurrentView("welcome");
   });
 
@@ -44,7 +44,7 @@ function App() {
         return (
           <MainDataView
             onClose={triggerDisconnect}
-            connectionDetails={connectionDetails}
+            connectionProfile={connectionProfile}
           />
         );
       default:

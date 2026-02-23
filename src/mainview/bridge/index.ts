@@ -5,9 +5,10 @@ import {
   type AppEventPayloadMap,
   type AppRpcError,
   type CancelAgentRunInput,
-  type ConnectionDetails,
+  type ConnectionProfile,
+  type DataEntityRef,
   type ExtractMetadataInput,
-  type GetTableDataInput,
+  type ReadEntityInput,
   type StartAgentRunInput,
   type StartAgentRunOutput,
   type ThemeSettings,
@@ -171,9 +172,9 @@ export const api = {
       callRPC("listSavedConnections", () =>
         getRPC().request.listSavedConnections({}),
       ),
-    saveConnection: (input: { details: ConnectionDetails }) =>
+    saveConnection: (input: { profile: ConnectionProfile }) =>
       callRPC("saveConnection", () => getRPC().request.saveConnection(input)),
-    testConnection: (input: { details: ConnectionDetails }) =>
+    testConnection: (input: { profile: ConnectionProfile }) =>
       callRPC("testConnection", () => getRPC().request.testConnection(input)),
     getConnectionCapabilities: () =>
       callRPC("getConnectionCapabilities", () =>
@@ -185,23 +186,25 @@ export const api = {
   query: {
     executeSQL: (input: { query: string }) =>
       callRPC("executeSQL", () => getRPC().request.executeSQL(input)),
-    listNamespaces: () =>
-      callRPC("listNamespaces", () => getRPC().request.listNamespaces({})),
-    listTables: (input: { namespaceName: string }) =>
-      callRPC("listTables", () => getRPC().request.listTables(input)),
-    getTableData: (input: GetTableDataInput) =>
-      callRPC("getTableData", () => getRPC().request.getTableData(input)),
-    getTableSchema: (input: { namespaceName: string; tableName: string }) =>
-      callRPC("getTableSchema", () => getRPC().request.getTableSchema(input)),
+    listConnectors: () =>
+      callRPC("listConnectors", () => getRPC().request.listConnectors({})),
+    listExplorerNodes: (input: { parentNodeId?: string | null }) =>
+      callRPC("listExplorerNodes", () =>
+        getRPC().request.listExplorerNodes(input),
+      ),
+    readEntity: (input: ReadEntityInput) =>
+      callRPC("readEntity", () => getRPC().request.readEntity(input)),
+    getEntitySchema: (input: { entity: DataEntityRef }) =>
+      callRPC("getEntitySchema", () => getRPC().request.getEntitySchema(input)),
   },
   metadata: {
-    getDatabaseMetadata: () =>
-      callRPC("getDatabaseMetadata", () =>
-        getRPC().request.getDatabaseMetadata({}),
+    getConnectionMetadata: () =>
+      callRPC("getConnectionMetadata", () =>
+        getRPC().request.getConnectionMetadata({}),
       ),
-    extractDatabaseMetadata: (input: ExtractMetadataInput) =>
-      callRPC("extractDatabaseMetadata", () =>
-        getRPC().request.extractDatabaseMetadata(input),
+    extractConnectionMetadata: (input: ExtractMetadataInput) =>
+      callRPC("extractConnectionMetadata", () =>
+        getRPC().request.extractConnectionMetadata(input),
       ),
   },
   settings: {

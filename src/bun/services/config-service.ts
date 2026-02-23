@@ -6,7 +6,8 @@ import {
   CONFIG_DIR_NAME,
   CONFIG_FILE_NAME,
   type ConfigData,
-  type ConnectionDetails,
+  type ConnectionProfile,
+  connectionProfileSchema,
   DEFAULT_BASE_THEME,
   DEFAULT_THEME_MODE,
   DEFAULT_WINDOW_HEIGHT,
@@ -38,7 +39,7 @@ function getDefaultConfig(): ConfigData {
   };
 }
 
-function omitConnectionId(details: ConnectionDetails): ConnectionDetails {
+function omitConnectionId(details: ConnectionProfile): ConnectionProfile {
   const { id: _id, ...rest } = details;
   return rest;
 }
@@ -70,8 +71,25 @@ export class ConfigService {
     const loaded = JSON.parse(raw) as ConfigData;
 
     if (loaded.connections && typeof loaded.connections === "object") {
-      this.config.connections = loaded.connections;
+      const next: Record<string, ConnectionProfile> = {};
+      for (const [id, value] of Object.entries(loaded.connections)) {
+        try {
+          const parsed = connectionProfileSchema.parse({
+            ...((value as unknown as Record<string, unknown>) || {}),
+            id,
+          });
+
+          next[id] = {
+            ...parsed,
+            id: undefined,
+          };
+        } catch {
+          // Break compatibility by design: ignore invalid connection entries.
+        }
+      }
+      this.config.connections = next;
     }
+
     if (loaded.appearance) {
       this.config.appearance = loaded.appearance;
     }
@@ -87,8 +105,8 @@ export class ConfigService {
     });
   }
 
-  getAllConnections(): Record<string, ConnectionDetails> {
-    const copy: Record<string, ConnectionDetails> = {};
+  getAllConnections(): Record<string, ConnectionProfile> {
+    const copy: Record<string, ConnectionProfile> = {};
     for (const [id, details] of Object.entries(this.config.connections)) {
       copy[id] = {
         ...details,
@@ -98,13 +116,13 @@ export class ConfigService {
     return copy;
   }
 
-  addOrUpdateConnection(details: ConnectionDetails): string {
-    const name = details.name?.trim();
+  addOrUpdateConnection(profile: ConnectionProfile): string {
+    const name = profile.name?.trim();
     if (!name) {
       throw new Error("connection name cannot be empty");
     }
 
-    const targetId = details.id?.trim() || generateConnectionId();
+    const targetId = profile.id?.trim() || generateConnectionId();
 
     for (const [id, existing] of Object.entries(this.config.connections)) {
       if (id === targetId) {
@@ -116,7 +134,7 @@ export class ConfigService {
     }
 
     this.config.connections[targetId] = omitConnectionId({
-      ...details,
+      ...profile,
       id: undefined,
       name,
     });
@@ -134,20 +152,20 @@ export class ConfigService {
   }
 
   getConnection(connectionId: string): {
-    details: ConnectionDetails;
+    profile: ConnectionProfile;
     found: boolean;
   } {
-    const details = this.config.connections[connectionId];
-    if (!details) {
+    const profile = this.config.connections[connectionId];
+    if (!profile) {
       return {
-        details: {} as ConnectionDetails,
+        profile: {} as ConnectionProfile,
         found: false,
       };
     }
 
     return {
-      details: {
-        ...details,
+      profile: {
+        ...profile,
         id: connectionId,
       },
       found: true,
@@ -155,13 +173,13 @@ export class ConfigService {
   }
 
   recordConnectionUsage(connectionId: string): void {
-    const details = this.config.connections[connectionId];
-    if (!details) {
+    const profile = this.config.connections[connectionId];
+    if (!profile) {
       return;
     }
 
     this.config.connections[connectionId] = {
-      ...details,
+      ...profile,
       lastUsed: new Date().toISOString(),
     };
     this.save();

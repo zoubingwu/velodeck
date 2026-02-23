@@ -1,9 +1,12 @@
 import type {
-  AdapterCapabilities,
-  ConnectionDetails,
-  NamespaceRef,
+  ConnectionProfile,
+  ConnectorCapabilities,
+  DataEntityRef,
+  EntityDataPage,
+  ExplorerNode,
+  ServerSideFilter,
 } from "@shared/contracts";
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   type CellContext,
   type ColumnDef,
@@ -18,12 +21,12 @@ import { useLocalStorageState, useMemoizedFn } from "ahooks";
 import { Allotment as ReactSplitView } from "allotment";
 import { api, onEvent } from "@/bridge";
 import { AIPanel } from "@/components/AIPanel";
-import { DatabaseTree, type DatabaseTreeItem } from "@/components/DatabaseTree";
+import { DatabaseTree, type ExplorerTreeNode } from "@/components/DatabaseTree";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import { Button } from "@/components/ui/button";
 import {
   DataTableFilter,
-  type ServerSideFilter,
+  type ServerSideFilter as FilterControlValue,
 } from "@/components/ui/data-table-filter";
 import {
   Tooltip,
@@ -32,11 +35,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { filterFn } from "@/lib/filters";
-import {
-  ColumnDataTypeIcons,
-  isSystemDatabase,
-  mapDbColumnTypeToFilterType,
-} from "@/lib/utils";
+import { ColumnDataTypeIcons, mapDbColumnTypeToFilterType } from "@/lib/utils";
 import "allotment/dist/style.css";
 import { Loader, SettingsIcon, SparkleIcon, UnplugIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -47,11 +46,8 @@ import SettingsModal from "./SettingModal";
 import TablePlaceholder from "./TablePlaceHolder";
 
 type TableRowData = Record<string, any>;
-type DatabaseTreeData = DatabaseTreeItem[];
 
 type TableState = {
-  namespaceName: string;
-  tableName: string;
   pageSize: number;
   pageIndex: number;
   serverFilters: ServerSideFilter[];
@@ -59,8 +55,6 @@ type TableState = {
 
 const defaultPageSize = 50;
 const defaultTableState: TableState = {
-  namespaceName: "",
-  tableName: "",
   pageSize: defaultPageSize,
   pageIndex: 0,
   serverFilters: [],
@@ -73,60 +67,91 @@ const LAYOUT_DB_TREE_WIDTH_KEY = "layout:dbTreeWidth";
 const LAYOUT_AI_PANEL_WIDTH_KEY = "layout:aiPanelWidth";
 const LAYOUT_AI_PANEL_VISIBLE_KEY = "layout:aiPanelVisible";
 
-const SHOW_SYSTEM_DATABASES = false;
+const ROOT_PARENT_KEY = "__root__";
 
-function databaseKindLabel(kind?: ConnectionDetails["kind"]): string {
-  switch (kind) {
-    case "mysql":
-      return "MySQL/TiDB";
-    case "postgres":
-      return "PostgreSQL";
-    case "sqlite":
-      return "SQLite";
-    case "bigquery":
-      return "BigQuery";
-    default:
-      return "Database";
+function connectorKindLabel(kind?: string): string {
+  if (!kind) {
+    return "Database";
   }
+
+  return kind
+    .split(/[-_]/g)
+    .filter((item) => item.length > 0)
+    .map((item) => item[0].toUpperCase() + item.slice(1))
+    .join(" ");
 }
 
-function fileNameFromPath(path: string): string {
-  const normalized = path.replace(/\\/g, "/").trim();
-  if (!normalized) {
+function normalizeExplorerNodes(nodes: ExplorerNode[]): ExplorerNode[] {
+  return [...nodes].sort((a, b) => {
+    if (a.expandable && !b.expandable) {
+      return -1;
+    }
+    if (!a.expandable && b.expandable) {
+      return 1;
+    }
+    return a.label.localeCompare(b.label);
+  });
+}
+
+function toTreeNodes(
+  parentKey: string,
+  childrenByParent: Record<string, ExplorerNode[]>,
+  loadingParents: Record<string, boolean>,
+): ExplorerTreeNode[] {
+  const children = childrenByParent[parentKey] || [];
+
+  return children.map((node) => ({
+    nodeId: node.nodeId,
+    label: node.label,
+    expandable: node.expandable,
+    isLoadingChildren: !!loadingParents[node.nodeId],
+    entityRef: node.entityRef
+      ? {
+          ...node.entityRef,
+          nodeId: node.nodeId,
+        }
+      : undefined,
+    children: node.expandable
+      ? toTreeNodes(node.nodeId, childrenByParent, loadingParents)
+      : [],
+  }));
+}
+
+function entityTitle(entity: DataEntityRef | null): string {
+  if (!entity) {
     return "";
   }
 
-  const parts = normalized.split("/");
-  return parts[parts.length - 1] || "";
-}
-
-function defaultNamespaceDisplayName(
-  connectionDetails: ConnectionDetails | null,
-  namespaceName: string,
-): string {
-  if (connectionDetails?.kind === "sqlite" && namespaceName === "main") {
-    const fileName = fileNameFromPath(connectionDetails.filePath || "");
-    if (fileName) {
-      return fileName;
-    }
+  if (entity.namespace) {
+    return `${entity.namespace}.${entity.name}`;
   }
 
-  return namespaceName;
+  return entity.name;
 }
 
 const MainDataView = ({
   onClose,
-  connectionDetails,
+  connectionProfile,
 }: {
   onClose: () => void;
-  connectionDetails: ConnectionDetails | null;
+  connectionProfile: ConnectionProfile | null;
 }) => {
   const [activityLog, setActivityLog] = useState<string[]>([]);
-  const [databaseTree, setDatabaseTree] = useImmer<DatabaseTreeData>([]);
   const [tableState, setTableState] = useImmer<TableState>(defaultTableState);
+  const [selectedEntity, setSelectedEntity] = useState<DataEntityRef | null>(
+    null,
+  );
+  const [selectedEntityNodeId, setSelectedEntityNodeId] = useState("");
+  const [childrenByParent, setChildrenByParent] = useImmer<
+    Record<string, ExplorerNode[]>
+  >({
+    [ROOT_PARENT_KEY]: [],
+  });
+  const [loadingParents, setLoadingParents] = useImmer<Record<string, boolean>>(
+    {},
+  );
+  const [treeLoadError, setTreeLoadError] = useState<Error | null>(null);
 
-  const currentNamespace = tableState.namespaceName;
-  const currentTable = tableState.tableName;
   const currentPageSize = tableState.pageSize;
   const currentPageIndex = tableState.pageIndex;
   const currentServerFilters = tableState.serverFilters;
@@ -156,101 +181,108 @@ const MainDataView = ({
     },
   );
 
-  const mergeDatabaseTree = useMemoizedFn(
-    (
-      entries: {
-        namespaceName: string;
-        namespaceDisplayName?: string;
-        tables?: string[];
-        isLoadingTables?: boolean;
-      }[],
-    ) => {
-      setDatabaseTree((draft) => {
-        entries.forEach((entry) => {
-          const existing = draft.find(
-            (item) => item.name === entry.namespaceName,
-          );
-          if (existing) {
-            if (entry.namespaceDisplayName) {
-              existing.displayName = entry.namespaceDisplayName;
-            }
-            if (entry.tables) {
-              existing.tables = entry.tables;
-            }
-            existing.isLoadingTables = entry.isLoadingTables ?? false;
-            return;
-          }
+  const loadedParentRef = useRef(new Set<string>());
 
-          draft.push({
-            name: entry.namespaceName,
-            displayName:
-              entry.namespaceDisplayName ||
-              defaultNamespaceDisplayName(
-                connectionDetails,
-                entry.namespaceName,
-              ),
-            tables: entry.tables || [],
-            isLoadingTables: entry.isLoadingTables ?? false,
-          });
-        });
-
-        draft.sort((a, b) => {
-          const isASystemDb = isSystemDatabase(a.name);
-          const isBSystemDb = isSystemDatabase(b.name);
-          if (isASystemDb && !isBSystemDb) {
-            return -1;
-          }
-          if (!isASystemDb && isBSystemDb) {
-            return 1;
-          }
-          const aLabel = a.displayName || a.name;
-          const bLabel = b.displayName || b.name;
-          return aLabel.localeCompare(bLabel);
-        });
-      });
-    },
-  );
-
-  const { data: connectionCapabilities } = useQuery<AdapterCapabilities, Error>(
-    {
-      queryKey: ["connectionCapabilities", connectionDetails?.id],
-      queryFn: () => api.connection.getConnectionCapabilities(),
-      enabled: Boolean(connectionDetails?.id),
-      staleTime: Number.POSITIVE_INFINITY,
-    },
-  );
+  const { data: connectionCapabilities } = useQuery<
+    ConnectorCapabilities,
+    Error
+  >({
+    queryKey: ["connectionCapabilities", connectionProfile?.id],
+    queryFn: () => api.connection.getConnectionCapabilities(),
+    enabled: Boolean(connectionProfile?.id),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
 
   const {
-    data: namespaces = [],
-    isLoading: isLoadingNamespaces,
-    error: namespacesError,
-  } = useQuery<NamespaceRef[], Error>({
-    queryKey: ["namespaces"],
-    queryFn: () => api.query.listNamespaces(),
+    data: rootNodesData,
+    isLoading: isLoadingRootNodes,
+    error: rootNodesError,
+  } = useQuery<ExplorerNode[], Error>({
+    queryKey: ["explorer", "root", connectionProfile?.id],
+    queryFn: () => api.query.listExplorerNodes({ parentNodeId: null }),
+    enabled: Boolean(connectionProfile?.id),
     staleTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 
+  const normalizedRootNodes = useMemo(
+    () => normalizeExplorerNodes(rootNodesData || []),
+    [rootNodesData],
+  );
+  const rootNodeIdsKey = useMemo(
+    () =>
+      normalizedRootNodes
+        .map(
+          (node) => `${node.nodeId}:${node.label}:${node.expandable ? 1 : 0}`,
+        )
+        .join("|"),
+    [normalizedRootNodes],
+  );
+
+  const loadChildren = useMemoizedFn(async (parentNodeId: string) => {
+    if (loadedParentRef.current.has(parentNodeId)) {
+      return;
+    }
+
+    setLoadingParents((draft) => {
+      draft[parentNodeId] = true;
+    });
+
+    try {
+      const children = await api.query.listExplorerNodes({ parentNodeId });
+      const sorted = normalizeExplorerNodes(children);
+      setChildrenByParent((draft) => {
+        draft[parentNodeId] = sorted;
+      });
+      loadedParentRef.current.add(parentNodeId);
+      setTreeLoadError(null);
+    } catch (error) {
+      const normalized =
+        error instanceof Error ? error : new Error(String(error ?? "unknown"));
+      setTreeLoadError(normalized);
+      appendActivityLog(`Explorer load failed: ${normalized.message}`);
+    } finally {
+      setLoadingParents((draft) => {
+        draft[parentNodeId] = false;
+      });
+    }
+  });
+
+  useEffect(() => {
+    setChildrenByParent((draft) => {
+      draft[ROOT_PARENT_KEY] = normalizedRootNodes;
+    });
+
+    loadedParentRef.current.clear();
+    loadedParentRef.current.add(ROOT_PARENT_KEY);
+
+    for (const node of normalizedRootNodes) {
+      if (node.expandable) {
+        void loadChildren(node.nodeId);
+      }
+    }
+  }, [loadChildren, rootNodeIdsKey]);
+
   const indexStartedRef = useRef(false);
   const triggerIndexer = useMemoizedFn(
-    (force: boolean, namespaceName?: string) => {
+    (force: boolean, scopeNodeId?: string) => {
       if (indexStartedRef.current && !force) {
         return;
       }
       indexStartedRef.current = true;
 
       appendActivityLog("Indexing metadata...");
-      const connectionId = connectionDetails?.id;
+      const connectionId = connectionProfile?.id;
       if (!connectionId) {
         appendActivityLog("Indexing skipped: no active connection.");
         return;
       }
 
       void api.metadata
-        .extractDatabaseMetadata({
+        .extractConnectionMetadata({
           connectionId,
           force,
-          namespaceName: namespaceName ?? "",
+          scopeNodeId: scopeNodeId ?? "",
         })
         .catch((error) => {
           const message =
@@ -259,50 +291,6 @@ const MainDataView = ({
         });
     },
   );
-
-  useEffect(() => {
-    if (!namespaces.length) {
-      return;
-    }
-
-    const visibleNamespaces = namespaces.filter((item) =>
-      connectionDetails?.kind === "mysql" && !SHOW_SYSTEM_DATABASES
-        ? !isSystemDatabase(item.namespaceName)
-        : true,
-    );
-
-    mergeDatabaseTree(
-      visibleNamespaces.map((item) => ({
-        namespaceName: item.namespaceName,
-        namespaceDisplayName:
-          item.displayName ||
-          defaultNamespaceDisplayName(connectionDetails, item.namespaceName),
-      })),
-    );
-
-    const visibleNamespaceNames = visibleNamespaces.map(
-      (item) => item.namespaceName,
-    );
-
-    const checkMetadataAndTriggerIndexer = async () => {
-      try {
-        const metadata = await api.metadata.getDatabaseMetadata();
-        const existing = Object.keys(metadata?.namespaces || {});
-        const missing = visibleNamespaceNames.filter(
-          (name) => !existing.includes(name),
-        );
-        if (missing.length > 0) {
-          missing.forEach((namespaceName) =>
-            triggerIndexer(true, namespaceName),
-          );
-        }
-      } catch {
-        triggerIndexer(true);
-      }
-    };
-
-    void checkMetadataAndTriggerIndexer();
-  }, [namespaces, connectionDetails?.kind, mergeDatabaseTree, triggerIndexer]);
 
   useEffect(() => {
     const cleanupFailed = onEvent("metadata:extraction:failed", (payload) => {
@@ -317,19 +305,9 @@ const MainDataView = ({
       "metadata:extraction:completed",
       async (metadata) => {
         appendActivityLog("Indexing metadata completed.");
-        const kindLabel = databaseKindLabel(connectionDetails?.kind);
+        const kindLabel = connectorKindLabel(connectionProfile?.kind);
         const versionLabel = metadata.version ? ` ${metadata.version}` : "";
         appendActivityLog(`Connected to ${kindLabel}${versionLabel}`);
-
-        mergeDatabaseTree(
-          Object.keys(metadata.namespaces).map((namespaceName) => ({
-            namespaceName,
-            tables: metadata.namespaces[namespaceName].tables.map(
-              (table) => table.name,
-            ),
-            isLoadingTables: false,
-          })),
-        );
       },
     );
 
@@ -339,75 +317,49 @@ const MainDataView = ({
       cleanupFailed();
       cleanupCompleted();
     };
-  }, [
-    appendActivityLog,
-    connectionDetails?.kind,
-    mergeDatabaseTree,
-    triggerIndexer,
-  ]);
+  }, [appendActivityLog, connectionProfile?.kind, triggerIndexer]);
 
-  const { mutateAsync: fetchTables } = useMutation({
-    mutationFn: (namespaceName: string) =>
-      api.query.listTables({ namespaceName }),
-    onMutate: (namespaceName: string) => {
-      if (
-        !databaseTree.find((db) => db.name === namespaceName)?.tables?.length
-      ) {
-        mergeDatabaseTree([{ namespaceName, isLoadingTables: true }]);
-      }
-    },
-    onSuccess: (tables, namespaceName) => {
-      mergeDatabaseTree([
-        {
-          namespaceName,
-          tables: tables.map((table) => table.tableName),
-          isLoadingTables: false,
-        },
-      ]);
-    },
-    onError: (error, namespaceName) => {
-      mergeDatabaseTree([{ namespaceName, isLoadingTables: false }]);
-      appendActivityLog(`Error fetching tables: ${error.message}`);
-    },
-  });
-
-  const { data: tableData, isFetching: isFetchingTableData } = useQuery({
-    enabled: !!currentNamespace && !!currentTable,
+  const { data: entityData, isFetching: isFetchingEntityData } = useQuery<
+    EntityDataPage,
+    Error
+  >({
+    enabled: Boolean(selectedEntity),
     queryKey: [
-      "tableData",
-      currentNamespace,
-      currentTable,
+      "entityData",
+      selectedEntity,
       currentPageSize,
       currentPageIndex,
       currentServerFilters,
     ],
     queryFn: async () => {
-      const filterObject =
-        connectionCapabilities?.supportsServerSideFilter === false
-          ? null
-          : currentServerFilters.length > 0
-            ? { filters: currentServerFilters }
-            : null;
+      if (!selectedEntity) {
+        throw new Error("entity selection is required");
+      }
 
-      const titleTarget = `${currentNamespace}.${currentTable}`;
+      const titleTarget = entityTitle(selectedEntity);
 
       try {
         appendActivityLog(`Fetching data from ${titleTarget}...`);
-        const res = await api.query.getTableData({
-          namespaceName: currentNamespace,
-          tableName: currentTable,
+        const res = await api.query.readEntity({
+          entity: selectedEntity,
           limit: currentPageSize,
           offset: currentPageIndex * currentPageSize,
-          filterParams: filterObject,
+          filters:
+            connectionCapabilities?.supportsServerSideFilter === false
+              ? []
+              : currentServerFilters,
         });
         appendActivityLog(`Fetched data from ${titleTarget}`);
         return res;
-      } catch (error: any) {
+      } catch (error: unknown) {
         appendActivityLog(
-          `Error fetching ${titleTarget}: ${error?.message || String(error)}`,
+          `Error fetching ${titleTarget}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         );
-        toast.error("Error fetching table data", {
-          description: error,
+        toast.error("Error fetching entity data", {
+          description:
+            error instanceof Error ? error.message : String(error ?? "unknown"),
         });
         throw error;
       }
@@ -415,7 +367,7 @@ const MainDataView = ({
     placeholderData: keepPreviousData,
   });
 
-  const handleFilterChange = useMemoizedFn((filters: ServerSideFilter[]) => {
+  const handleFilterChange = useMemoizedFn((filters: FilterControlValue[]) => {
     if (connectionCapabilities?.supportsServerSideFilter === false) {
       return;
     }
@@ -438,27 +390,27 @@ const MainDataView = ({
       return String(value).slice(0, 10000);
     };
 
-    if (!tableData?.columns) {
+    if (!entityData?.fields) {
       return [];
     }
 
-    return tableData.columns.map((column): ColumnDef<TableRowData> => {
-      const type = mapDbColumnTypeToFilterType(column.type);
+    return entityData.fields.map((field): ColumnDef<TableRowData> => {
+      const type = mapDbColumnTypeToFilterType(field.type);
       return {
-        accessorKey: column.name,
-        header: column.name,
+        accessorKey: field.name,
+        header: field.name,
         cell: renderCell,
         filterFn: filterFn(type),
         meta: {
-          displayName: column.name,
+          displayName: field.name,
           type,
           icon: ColumnDataTypeIcons[type],
         },
       };
     });
-  }, [tableData?.columns]);
+  }, [entityData?.fields]);
 
-  const totalRowCount = tableData?.totalRows;
+  const totalRowCount = entityData?.totalRows;
 
   const pagination = useMemo(
     () => ({
@@ -476,35 +428,34 @@ const MainDataView = ({
   }, [totalRowCount, currentPageSize]);
 
   const tableViewState = (() => {
-    if (isLoadingNamespaces) {
+    if (isLoadingRootNodes) {
       return "init";
     }
 
-    if (isFetchingTableData) {
+    if (isFetchingEntityData) {
       return "loading";
     }
 
-    if (currentNamespace && currentTable && tableData?.columns?.length) {
+    if (selectedEntity && entityData?.fields?.length) {
       return "data";
     }
 
     return "empty";
   })();
 
-  const handleSelectNamespace = useMemoizedFn((namespaceName: string) => {
-    void fetchTables(namespaceName);
+  const handleSelectEntity = useMemoizedFn((entity: DataEntityRef) => {
+    setSelectedEntity(entity);
+    setSelectedEntityNodeId(entity.nodeId || "");
+
+    setTableState((draft) => {
+      draft.serverFilters = [];
+      draft.pageIndex = 0;
+    });
   });
 
-  const handleSelectTable = useMemoizedFn(
-    (namespaceName: string, tableName: string) => {
-      setTableState((draft) => {
-        draft.namespaceName = namespaceName;
-        draft.tableName = tableName;
-        draft.serverFilters = [];
-        draft.pageIndex = 0;
-      });
-    },
-  );
+  const handleExpandNode = useMemoizedFn((nodeId: string) => {
+    void loadChildren(nodeId);
+  });
 
   const handlePaginationChange = useMemoizedFn(
     (updaterOrValue: Updater<PaginationState>) => {
@@ -520,7 +471,7 @@ const MainDataView = ({
     },
   );
 
-  const data = useMemo(() => tableData?.rows ?? [], [tableData]);
+  const data = useMemo(() => entityData?.rows ?? [], [entityData]);
 
   const table: ReactTable<TableRowData> = useReactTable({
     data,
@@ -541,6 +492,11 @@ const MainDataView = ({
     },
   });
 
+  const rootTreeNodes = useMemo(
+    () => toTreeNodes(ROOT_PARENT_KEY, childrenByParent, loadingParents),
+    [childrenByParent, loadingParents],
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex-1 min-h-0">
@@ -559,14 +515,12 @@ const MainDataView = ({
             maxSize={DEFAULT_DB_TREE_WIDTH * 2}
           >
             <DatabaseTree
-              databaseTree={databaseTree}
-              isLoadingDatabases={
-                isLoadingNamespaces && databaseTree.length === 0
-              }
-              databasesError={namespacesError}
-              onSelectDatabase={handleSelectNamespace}
-              onSelectTable={handleSelectTable}
-              selectedTable={{ db: currentNamespace, table: currentTable }}
+              rootNodes={rootTreeNodes}
+              isLoading={isLoadingRootNodes && rootTreeNodes.length === 0}
+              loadError={rootNodesError || treeLoadError}
+              onExpandNode={handleExpandNode}
+              onSelectEntity={handleSelectEntity}
+              selectedEntityNodeId={selectedEntityNodeId}
             />
           </ReactSplitView.Pane>
 

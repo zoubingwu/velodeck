@@ -67,7 +67,6 @@ const Tree = forwardRef<HTMLDivElement, TreeViewProps>(
       openIcon,
       closeIcon,
       dir,
-      ...props
     },
     ref,
   ) => {
@@ -157,14 +156,9 @@ const Tree = forwardRef<HTMLDivElement, TreeViewProps>(
             dir={dir as Direction}
           >
             <AccordionPrimitive.Root
-              {...props}
               type="multiple"
-              defaultValue={expandedItems}
               value={expandedItems}
               className="flex flex-col gap-1"
-              onValueChange={(value) =>
-                setExpandedItems((prev) => [...(prev ?? []), value[0]])
-              }
               dir={dir as Direction}
             >
               {children}
@@ -232,7 +226,6 @@ const Folder = forwardRef<
       handleExpand,
       expandedItems,
       indicator,
-      setExpandedItems,
       openIcon,
       closeIcon,
     } = useTree();
@@ -274,11 +267,7 @@ const Folder = forwardRef<
             dir={direction}
             type="multiple"
             className="ml-5 flex flex-col gap-1 py-1 rtl:mr-5 "
-            defaultValue={expandedItems}
             value={expandedItems}
-            onValueChange={(value) => {
-              setExpandedItems?.((prev) => [...(prev ?? []), value[0]]);
-            }}
           >
             {children}
           </AccordionPrimitive.Root>

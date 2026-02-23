@@ -2,15 +2,15 @@ import { BrowserView } from "electrobun/bun";
 import {
   APP_EVENTS,
   type AppRpcError,
-  type ConnectionDetails,
+  type ConnectionProfile,
   cancelAgentRunSchema,
-  connectionDetailsSchema,
+  connectionProfileSchema,
   executeSQLSchema,
   extractMetadataSchema,
-  getTableDataSchema,
-  getTableSchemaSchema,
-  listTablesSchema,
+  getEntitySchemaSchema,
+  listExplorerNodesSchema,
   pickSQLiteFileSchema,
+  readEntitySchema,
   resolveAgentSQLApprovalSchema,
   startAgentRunSchema,
   themeSettingsSchema,
@@ -21,24 +21,24 @@ import { events } from "./events";
 import { AgentMCPService } from "./services/agent-mcp-service";
 import { AgentService } from "./services/agent-service";
 import { ConfigService } from "./services/config-service";
-import { DatabaseGatewayService } from "./services/database-gateway-service";
+import { ConnectorGatewayService } from "./services/connector-gateway-service";
 import { logger } from "./services/logger-service";
 import { MetadataService } from "./services/metadata-service";
 import { SessionService } from "./services/session-service";
 
 export const configService = new ConfigService();
-export const databaseService = new DatabaseGatewayService();
+export const connectorService = new ConnectorGatewayService();
 export const metadataService = new MetadataService(
   configService,
-  databaseService,
+  connectorService,
 );
 export const sessionService = new SessionService();
-export const agentMCPService = new AgentMCPService(events, databaseService);
+export const agentMCPService = new AgentMCPService(events, connectorService);
 export const agentService = new AgentService(
   events,
   agentMCPService,
   sessionService,
-  databaseService,
+  connectorService,
 );
 
 export type WindowController = {
@@ -87,19 +87,19 @@ function asRecord(payload: unknown): Record<string, unknown> {
 
 function assertActiveConnection(): {
   connectionId: string;
-  details: ConnectionDetails;
+  profile: ConnectionProfile;
 } {
-  const { id, details } = sessionService.ensureActiveConnection();
+  const { id, profile } = sessionService.ensureActiveConnection();
   return {
     connectionId: id,
-    details,
+    profile,
   };
 }
 
 async function getVersionForConnection(
-  details: ConnectionDetails,
+  profile: ConnectionProfile,
 ): Promise<string> {
-  return databaseService.getVersion(details);
+  return connectorService.getVersion(profile);
 }
 
 async function attachVersion(
@@ -148,14 +148,14 @@ export function createBunRPC(windowController: WindowController) {
         async testConnection(payload: unknown): Promise<boolean> {
           try {
             const input = asRecord(payload);
-            const details = connectionDetailsSchema.parse(input.details);
-            return await databaseService.testConnection(details);
+            const profile = connectionProfileSchema.parse(input.profile);
+            return await connectorService.testConnection(profile);
           } catch (error) {
             throw toRpcError(error, "TEST_CONNECTION_FAILED");
           }
         },
 
-        async connectUsingSaved(payload: unknown): Promise<ConnectionDetails> {
+        async connectUsingSaved(payload: unknown): Promise<ConnectionProfile> {
           try {
             const input = asRecord(payload);
             const connectionId = input.connectionId;
@@ -163,14 +163,14 @@ export function createBunRPC(windowController: WindowController) {
               throw new Error("connection ID cannot be empty");
             }
 
-            const { details, found } =
+            const { profile, found } =
               configService.getConnection(connectionId);
             if (!found) {
               throw new Error(`saved connection '${connectionId}' not found`);
             }
 
-            await databaseService.testConnection(details);
-            sessionService.setActiveConnection(connectionId, details);
+            await connectorService.testConnection(profile);
+            sessionService.setActiveConnection(connectionId, profile);
             configService.recordConnectionUsage(connectionId);
 
             try {
@@ -190,12 +190,12 @@ export function createBunRPC(windowController: WindowController) {
               );
             }
 
-            const activeDetails = sessionService.getActiveConnection();
-            if (!activeDetails) {
+            const activeProfile = sessionService.getActiveConnection();
+            if (!activeProfile) {
               throw new Error("active connection is empty after connect");
             }
 
-            return activeDetails;
+            return activeProfile;
           } catch (error) {
             throw toRpcError(error, "CONNECT_FAILED");
           }
@@ -207,21 +207,21 @@ export function createBunRPC(windowController: WindowController) {
 
         async getActiveConnection(
           _payload: unknown,
-        ): Promise<ConnectionDetails | null> {
+        ): Promise<ConnectionProfile | null> {
           return sessionService.getActiveConnection();
         },
 
         async listSavedConnections(
           _payload: unknown,
-        ): Promise<Record<string, ConnectionDetails>> {
+        ): Promise<Record<string, ConnectionProfile>> {
           return configService.getAllConnections();
         },
 
         async saveConnection(payload: unknown): Promise<string> {
           try {
             const input = asRecord(payload);
-            const details = connectionDetailsSchema.parse(input.details);
-            return configService.addOrUpdateConnection(details);
+            const profile = connectionProfileSchema.parse(input.profile);
+            return configService.addOrUpdateConnection(profile);
           } catch (error) {
             throw toRpcError(error, "SAVE_CONNECTION_FAILED");
           }
@@ -249,8 +249,8 @@ export function createBunRPC(windowController: WindowController) {
         async executeSQL(payload: unknown) {
           try {
             const input = executeSQLSchema.parse(payload);
-            const { details } = assertActiveConnection();
-            return await databaseService.executeSQL(details, input.query);
+            const { profile } = assertActiveConnection();
+            return await connectorService.executeSQL(profile, input.query);
           } catch (error) {
             throw toRpcError(error, "EXECUTE_SQL_FAILED");
           }
@@ -258,8 +258,8 @@ export function createBunRPC(windowController: WindowController) {
 
         async getVersion(_payload: unknown): Promise<string> {
           try {
-            const { details } = assertActiveConnection();
-            return await getVersionForConnection(details);
+            const { profile } = assertActiveConnection();
+            return await getVersionForConnection(profile);
           } catch (error) {
             throw toRpcError(error, "GET_VERSION_FAILED");
           }
@@ -267,56 +267,54 @@ export function createBunRPC(windowController: WindowController) {
 
         async getConnectionCapabilities(_payload: unknown) {
           try {
-            const { details } = assertActiveConnection();
-            return databaseService.getCapabilities(details);
+            const { profile } = assertActiveConnection();
+            return connectorService.getConnectionCapabilities(profile);
           } catch (error) {
             throw toRpcError(error, "GET_CAPABILITIES_FAILED");
           }
         },
 
-        async listNamespaces(_payload: unknown) {
+        async listConnectors(_payload: unknown) {
           try {
-            const { details } = assertActiveConnection();
-            return await databaseService.listNamespaces(details);
+            return connectorService.listConnectors();
           } catch (error) {
-            throw toRpcError(error, "LIST_NAMESPACES_FAILED");
+            throw toRpcError(error, "LIST_CONNECTORS_FAILED");
           }
         },
 
-        async listTables(payload: unknown) {
+        async listExplorerNodes(payload: unknown) {
           try {
-            const input = listTablesSchema.parse(payload);
-            const { details } = assertActiveConnection();
-            return await databaseService.listTables(
-              details,
-              input.namespaceName,
+            const input = listExplorerNodesSchema.parse(payload || {});
+            const { profile } = assertActiveConnection();
+            return await connectorService.listExplorerNodes(
+              profile,
+              input.parentNodeId ?? null,
             );
           } catch (error) {
-            throw toRpcError(error, "LIST_TABLES_FAILED");
+            throw toRpcError(error, "LIST_EXPLORER_NODES_FAILED");
           }
         },
 
-        async getTableData(payload: unknown) {
+        async readEntity(payload: unknown) {
           try {
-            const input = getTableDataSchema.parse(payload);
-            const { details } = assertActiveConnection();
-            return await databaseService.getTableData(details, input);
+            const input = readEntitySchema.parse(payload);
+            const { profile } = assertActiveConnection();
+            return await connectorService.readEntity(profile, input);
           } catch (error) {
-            throw toRpcError(error, "GET_TABLE_DATA_FAILED");
+            throw toRpcError(error, "READ_ENTITY_FAILED");
           }
         },
 
-        async getTableSchema(payload: unknown) {
+        async getEntitySchema(payload: unknown) {
           try {
-            const input = getTableSchemaSchema.parse(payload);
-            const { details } = assertActiveConnection();
-            return await databaseService.getTableSchema(
-              details,
-              input.namespaceName,
-              input.tableName,
+            const input = getEntitySchemaSchema.parse(payload);
+            const { profile } = assertActiveConnection();
+            return await connectorService.getEntitySchema(
+              profile,
+              input.entity,
             );
           } catch (error) {
-            throw toRpcError(error, "GET_TABLE_SCHEMA_FAILED");
+            throw toRpcError(error, "GET_ENTITY_SCHEMA_FAILED");
           }
         },
 
@@ -348,7 +346,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async getDatabaseMetadata(_payload: unknown) {
+        async getConnectionMetadata(_payload: unknown) {
           try {
             const { connectionId } = assertActiveConnection();
             return metadataService.getMetadata(connectionId);
@@ -357,7 +355,7 @@ export function createBunRPC(windowController: WindowController) {
           }
         },
 
-        async extractDatabaseMetadata(payload: unknown) {
+        async extractConnectionMetadata(payload: unknown) {
           try {
             const input = extractMetadataSchema.parse(payload || {});
             const connectionId = requireConnectionId(input.connectionId);
@@ -366,7 +364,7 @@ export function createBunRPC(windowController: WindowController) {
             if (input.force) {
               metadata = await metadataService.extractMetadata(
                 connectionId,
-                input.namespaceName || "",
+                input.scopeNodeId || "",
               );
               metadataService.saveMetadata(connectionId);
             } else {

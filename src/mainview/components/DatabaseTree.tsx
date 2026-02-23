@@ -1,50 +1,108 @@
+import type { DataEntityRef } from "@shared/contracts";
 import { Table2Icon } from "lucide-react";
 import { memo } from "react";
 import { File, Folder, Tree } from "@/components/ui/file-tree";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export type DatabaseTreeItem = {
-  name: string;
-  displayName?: string;
-  tables: string[];
-  isLoadingTables?: boolean;
+export type ExplorerTreeNode = {
+  nodeId: string;
+  label: string;
+  expandable: boolean;
+  isLoadingChildren?: boolean;
+  entityRef?: DataEntityRef;
+  children: ExplorerTreeNode[];
 };
-
-export type DatabaseTree = DatabaseTreeItem[];
 
 type DatabaseTreeProps = {
-  databaseTree: DatabaseTree;
-  isLoadingDatabases: boolean;
-  databasesError: Error | null;
-  onSelectDatabase: (dbName: string) => void;
-  onSelectTable: (dbName: string, tableName: string) => void;
-  selectedTable: { db: string; table: string } | null;
+  rootNodes: ExplorerTreeNode[];
+  isLoading: boolean;
+  loadError: Error | null;
+  onExpandNode: (nodeId: string) => void;
+  onSelectEntity: (entity: DataEntityRef) => void;
+  selectedEntityNodeId: string;
 };
+
+function renderNode(
+  node: ExplorerTreeNode,
+  onExpandNode: (nodeId: string) => void,
+  onSelectEntity: (entity: DataEntityRef) => void,
+  selectedEntityNodeId: string,
+) {
+  if (!node.expandable) {
+    return (
+      <File
+        key={node.nodeId}
+        value={node.nodeId}
+        isSelect={selectedEntityNodeId === node.nodeId}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (node.entityRef) {
+            onSelectEntity(node.entityRef);
+          }
+        }}
+        fileIcon={<Table2Icon className="size-4" />}
+      >
+        {node.label}
+      </File>
+    );
+  }
+
+  return (
+    <Folder
+      key={node.nodeId}
+      element={node.label}
+      value={node.nodeId}
+      onExpand={onExpandNode}
+    >
+      {node.isLoadingChildren ? (
+        <File
+          isSelectable={false}
+          value={`${node.nodeId}:loading`}
+          className="text-muted-foreground italic"
+        >
+          Loading...
+        </File>
+      ) : node.children.length > 0 ? (
+        node.children.map((child) =>
+          renderNode(child, onExpandNode, onSelectEntity, selectedEntityNodeId),
+        )
+      ) : (
+        <File
+          isSelectable={false}
+          value={`${node.nodeId}:empty`}
+          className="text-muted-foreground italic"
+        >
+          Empty
+        </File>
+      )}
+    </Folder>
+  );
+}
 
 export const DatabaseTree = memo(
   ({
-    databaseTree,
-    isLoadingDatabases,
-    databasesError,
-    onSelectDatabase,
-    onSelectTable,
-    selectedTable,
+    rootNodes,
+    isLoading,
+    loadError,
+    onExpandNode,
+    onSelectEntity,
+    selectedEntityNodeId,
   }: DatabaseTreeProps) => {
-    const defaultExpandedItems = databaseTree.map((dbItem) => dbItem.name);
+    const defaultExpandedItems = rootNodes.map((node) => node.nodeId);
 
     return (
       <ScrollArea className="h-full bg-muted/50">
-        {isLoadingDatabases ? (
+        {isLoading ? (
           <div className="p-2 space-y-2">
             <Skeleton className="h-4 rounded-2xl" />
             <Skeleton className="h-4 rounded-2xl" />
             <Skeleton className="h-4 rounded-2xl" />
             <Skeleton className="h-4 rounded-2xl w-3/5" />
           </div>
-        ) : databasesError ? (
+        ) : loadError ? (
           <div className="p-2 text-center text-destructive">
-            Error loading Databases: {databasesError.message}
+            Error loading explorer: {loadError.message}
           </div>
         ) : (
           <Tree
@@ -52,52 +110,14 @@ export const DatabaseTree = memo(
             className="p-2"
             initialExpandedItems={defaultExpandedItems}
           >
-            {databaseTree.map((dbItem) => (
-              <Folder
-                key={dbItem.name}
-                element={dbItem.displayName || dbItem.name}
-                value={dbItem.name}
-                onExpand={onSelectDatabase}
-              >
-                {dbItem.isLoadingTables ? (
-                  <File
-                    isSelectable={false}
-                    value={".loading"}
-                    className="text-muted-foreground italic"
-                  >
-                    Loading...
-                  </File>
-                ) : dbItem.tables.length > 0 ? (
-                  dbItem.tables.map((tbl) => (
-                    <File
-                      key={tbl}
-                      value={tbl}
-                      isSelect={
-                        selectedTable?.db === dbItem.name &&
-                        selectedTable?.table === tbl
-                      }
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectTable(dbItem.name, tbl);
-                      }}
-                      fileIcon={<Table2Icon className="size-4" />}
-                    >
-                      {tbl}
-                    </File>
-                  ))
-                ) : (
-                  !dbItem.isLoadingTables && (
-                    <File
-                      isSelectable={false}
-                      value=".no-tables"
-                      className="text-muted-foreground italic"
-                    >
-                      No tables
-                    </File>
-                  )
-                )}
-              </Folder>
-            ))}
+            {rootNodes.map((node) =>
+              renderNode(
+                node,
+                onExpandNode,
+                onSelectEntity,
+                selectedEntityNodeId,
+              ),
+            )}
           </Tree>
         )}
       </ScrollArea>

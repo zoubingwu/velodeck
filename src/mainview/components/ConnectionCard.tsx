@@ -1,6 +1,6 @@
-import type { ConnectionDetails } from "@shared/contracts";
+import type { ConnectionProfile } from "@shared/contracts";
 import { Clock, Database, Loader, MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,32 +30,58 @@ import {
 type ConnectionCardProps = {
   id: string;
   name: string;
-  details: ConnectionDetails;
+  profile: ConnectionProfile;
+  connectorLabel: string;
   onConnect: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onEdit: (id: string, details: ConnectionDetails) => void;
+  onEdit: (id: string, profile: ConnectionProfile) => void;
   isConnecting: boolean;
   lastUsed: string;
 };
 
-function connectionSummary(details: ConnectionDetails): string {
-  switch (details.kind) {
-    case "mysql":
-    case "postgres":
-      return `${details.host}:${details.port} (${details.user})`;
-    case "sqlite":
-      return details.filePath;
-    case "bigquery":
-      return details.projectId;
+function readOption(options: Record<string, unknown>, key: string): string {
+  const value = options[key];
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value);
+}
+
+function connectionSummary(profile: ConnectionProfile): string {
+  const options = profile.options;
+  const host = readOption(options, "host");
+  const port = readOption(options, "port");
+  const user = readOption(options, "user");
+  const filePath = readOption(options, "filePath");
+  const projectId = readOption(options, "projectId");
+
+  if (host || port) {
+    const endpoint = [host, port].filter((item) => item).join(":");
+    if (user) {
+      return `${endpoint} (${user})`;
+    }
+    return endpoint;
   }
 
-  return "";
+  if (filePath) {
+    return filePath;
+  }
+
+  if (projectId) {
+    return projectId;
+  }
+
+  return profile.kind;
 }
 
 export const ConnectionCard = ({
   id,
   name,
-  details,
+  profile,
+  connectorLabel,
   onConnect,
   onDelete,
   onEdit,
@@ -63,6 +89,8 @@ export const ConnectionCard = ({
   lastUsed,
 }: ConnectionCardProps) => {
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const summary = useMemo(() => connectionSummary(profile), [profile]);
 
   const handleDeleteConfirm = async () => {
     setIsDeleting(true);
@@ -76,7 +104,7 @@ export const ConnectionCard = ({
   };
 
   const handleOpenEditForm = () => {
-    onEdit(id, details);
+    onEdit(id, profile);
   };
 
   return (
@@ -89,7 +117,11 @@ export const ConnectionCard = ({
       <CardContent className="flex-grow space-y-2 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
           <Database className="h-4 w-4 shrink-0" />
-          <span className="truncate">{connectionSummary(details)}</span>
+          <span className="truncate">{summary}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Database className="h-4 w-4 shrink-0" />
+          <span className="truncate">{connectorLabel}</span>
         </div>
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 shrink-0" />

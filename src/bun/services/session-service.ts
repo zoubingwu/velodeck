@@ -1,13 +1,13 @@
-import type { ConnectionDetails } from "../../shared/contracts";
+import type { ConnectionProfile } from "../../shared/contracts";
 
 export class SessionService {
-  private activeConnection: ConnectionDetails | null = null;
+  private activeConnection: ConnectionProfile | null = null;
   private activeConnectionId = "";
 
-  setActiveConnection(connectionId: string, details: ConnectionDetails): void {
+  setActiveConnection(connectionId: string, profile: ConnectionProfile): void {
     this.activeConnectionId = connectionId;
     this.activeConnection = {
-      ...details,
+      ...profile,
       id: connectionId,
     };
   }
@@ -17,7 +17,7 @@ export class SessionService {
     this.activeConnection = null;
   }
 
-  getActiveConnection(): ConnectionDetails | null {
+  getActiveConnection(): ConnectionProfile | null {
     return this.activeConnection;
   }
 
@@ -25,7 +25,7 @@ export class SessionService {
     return this.activeConnectionId;
   }
 
-  ensureActiveConnection(): { id: string; details: ConnectionDetails } {
+  ensureActiveConnection(): { id: string; profile: ConnectionProfile } {
     if (!this.activeConnection || !this.activeConnectionId) {
       throw new Error(
         "no active database connection established for this session",
@@ -34,7 +34,7 @@ export class SessionService {
 
     return {
       id: this.activeConnectionId,
-      details: this.activeConnection,
+      profile: this.activeConnection,
     };
   }
 }

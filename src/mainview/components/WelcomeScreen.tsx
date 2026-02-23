@@ -1,4 +1,4 @@
-import type { ConnectionDetails } from "@shared/contracts";
+import type { ConnectionProfile, ConnectorManifest } from "@shared/contracts";
 import { useMount } from "ahooks";
 import { formatDistanceToNow } from "date-fns";
 import { Loader, PlusCircleIcon, SettingsIcon } from "lucide-react";
@@ -11,26 +11,38 @@ import { ConnectionCard } from "./ConnectionCard";
 import { ConnectionFormDialog } from "./ConnectionForm";
 import SettingsModal from "./SettingModal";
 
-type SavedConnectionsMap = Record<string, ConnectionDetails>;
+type SavedConnectionsMap = Record<string, ConnectionProfile>;
 
 interface WelcomeScreenProps {
-  onConnected: (details: ConnectionDetails) => void;
+  onConnected: (profile: ConnectionProfile) => void;
 }
 
 const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
   const [savedConnections, setSavedConnections] = useState<SavedConnectionsMap>(
     {},
   );
+  const [connectorManifests, setConnectorManifests] = useState<
+    ConnectorManifest[]
+  >([]);
   const hasConnections = Object.keys(savedConnections).length > 0;
   const [isLoadingConnections, setIsLoadingConnections] = useState(true);
+  const [isLoadingConnectors, setIsLoadingConnectors] = useState(true);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingConnection, setEditingConnection] = useState<{
     id: string;
     name: string;
-    connection: ConnectionDetails;
+    profile: ConnectionProfile;
   } | null>(null);
+
+  const manifestByKind = useMemo(() => {
+    const map = new Map<string, ConnectorManifest>();
+    for (const manifest of connectorManifests) {
+      map.set(manifest.kind, manifest);
+    }
+    return map;
+  }, [connectorManifests]);
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -42,19 +54,34 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
       });
       setSavedConnections({});
     } finally {
-      if (isLoadingConnections) setIsLoadingConnections(false);
+      setIsLoadingConnections(false);
     }
-  }, [isLoadingConnections]);
+  }, []);
+
+  const fetchConnectors = useCallback(async () => {
+    try {
+      const connectors = await api.query.listConnectors();
+      setConnectorManifests(connectors || []);
+    } catch (error: any) {
+      toast.error("Failed to load connectors", {
+        description: error?.message,
+      });
+      setConnectorManifests([]);
+    } finally {
+      setIsLoadingConnectors(false);
+    }
+  }, []);
 
   useMount(() => {
-    fetchConnections();
+    void fetchConnections();
+    void fetchConnectors();
   });
 
   const handleConnect = async (connectionId: string) => {
     setConnectingId(connectionId);
     try {
-      const details = await api.connection.connectUsingSaved({ connectionId });
-      onConnected(details);
+      const profile = await api.connection.connectUsingSaved({ connectionId });
+      onConnected(profile);
     } catch (error: any) {
       console.error(`Connect using ${connectionId} error:`, error);
       toast.error("Connection Failed", { description: error?.message });
@@ -71,7 +98,7 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
       toast.success("Connection Deleted", {
         description: `Connection '${connectionName}' was deleted.`,
       });
-      fetchConnections();
+      void fetchConnections();
     } catch (error: any) {
       console.error(`Delete connection ${connectionId} error:`, error);
       toast.error("Delete Failed", { description: error?.message });
@@ -84,12 +111,12 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
     setIsFormOpen(true);
   };
 
-  const handleEdit = (connectionId: string, details: ConnectionDetails) => {
+  const handleEdit = (connectionId: string, profile: ConnectionProfile) => {
     setIsEditing(true);
     setEditingConnection({
       id: connectionId,
-      name: details.name || "",
-      connection: details,
+      name: profile.name || "",
+      profile,
     });
     setIsFormOpen(true);
   };
@@ -98,9 +125,11 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
     return Object.entries(savedConnections).sort(([, a], [, b]) => {
       const timeA = a.lastUsed ? new Date(a.lastUsed).getTime() : 0;
       const timeB = b.lastUsed ? new Date(b.lastUsed).getTime() : 0;
-      return timeB - timeA; // Sort descending (most recent first)
+      return timeB - timeA;
     });
   }, [savedConnections]);
+
+  const isLoading = isLoadingConnections || isLoadingConnectors;
 
   return (
     <div className="w-full min-h-full bg-muted/50 p-6 md:p-10">
@@ -110,13 +139,15 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
             Welcome to VeloDeck
           </h1>
           <p className="text-muted-foreground">
-            Connect and manage your MySQL, PostgreSQL, SQLite, and BigQuery
-            connections
+            Connect and browse data across connectors.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button onClick={handleAddNewConnection}>
+          <Button
+            onClick={handleAddNewConnection}
+            disabled={isLoadingConnectors}
+          >
             <PlusCircleIcon className="mr-2 h-4 w-4" /> Add New Connection
           </Button>
 
@@ -132,26 +163,29 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
       </header>
 
       <section>
-        {isLoadingConnections ? (
+        {isLoading ? (
           <div className="flex items-center justify-center p-10 text-muted-foreground">
             <Loader className="h-8 w-8 animate-spin mr-3" />
             <span>Loading connections...</span>
           </div>
         ) : hasConnections ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
-            {sortedConnections.map(([connectionId, details]) => (
+            {sortedConnections.map(([connectionId, profile]) => (
               <ConnectionCard
                 key={connectionId}
                 id={connectionId}
-                name={details.name || "Unnamed Connection"}
-                details={details}
+                name={profile.name || "Unnamed Connection"}
+                profile={profile}
+                connectorLabel={
+                  manifestByKind.get(profile.kind)?.label || profile.kind
+                }
                 onConnect={handleConnect}
                 onDelete={handleDelete}
                 onEdit={handleEdit}
                 isConnecting={connectingId === connectionId}
                 lastUsed={
-                  details.lastUsed
-                    ? formatDistanceToNow(new Date(details.lastUsed), {
+                  profile.lastUsed
+                    ? formatDistanceToNow(new Date(profile.lastUsed), {
                         addSuffix: true,
                       })
                     : "Never"
@@ -165,7 +199,11 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
             <p className="text-muted-foreground mt-1 mb-4">
               Ready to explore? Add your first connection now.
             </p>
-            <Button onClick={handleAddNewConnection} variant="outline">
+            <Button
+              onClick={handleAddNewConnection}
+              variant="outline"
+              disabled={isLoadingConnectors}
+            >
               <PlusCircleIcon className="mr-2 h-4 w-4" />
               Add New Connection
             </Button>
@@ -176,10 +214,13 @@ const WelcomeScreen = ({ onConnected }: WelcomeScreenProps) => {
       <ConnectionFormDialog
         isOpen={isFormOpen}
         onOpenChange={setIsFormOpen}
-        onConnectionSaved={fetchConnections}
+        onConnectionSaved={(_id, _profile) => {
+          void fetchConnections();
+        }}
         isEditing={isEditing}
         defaultValues={editingConnection}
         savedConnections={savedConnections}
+        connectorManifests={connectorManifests}
       />
     </div>
   );

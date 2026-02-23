@@ -6,11 +6,11 @@ import {
   type AgentSQLApprovalResolveInput,
   type AgentSQLClassification,
   APP_EVENTS,
-  type ConnectionDetails,
+  type ConnectionProfile,
   type SQLResult,
 } from "../../shared/contracts";
 import type { EventService } from "../events";
-import type { DatabaseGatewayService } from "./database-gateway-service";
+import type { ConnectorGatewayService } from "./connector-gateway-service";
 import { logger } from "./logger-service";
 
 export const VELODECK_MCP_SERVER_NAME = "velodeck_sql";
@@ -50,7 +50,7 @@ type JSONRPCResponse = {
 type RunContext = {
   runId: string;
   token: string;
-  connection: ConnectionDetails | null;
+  connection: ConnectionProfile | null;
   pendingApprovalIds: Set<string>;
 };
 
@@ -140,8 +140,8 @@ function classifySQL(sql: string): {
 }
 
 function cloneConnection(
-  details: ConnectionDetails | null,
-): ConnectionDetails | null {
+  details: ConnectionProfile | null,
+): ConnectionProfile | null {
   if (!details) {
     return null;
   }
@@ -157,7 +157,7 @@ export class AgentMCPService {
 
   constructor(
     private readonly events: EventService,
-    private readonly databaseService: DatabaseGatewayService,
+    private readonly connectorService: ConnectorGatewayService,
   ) {}
 
   getMCPURL(): string {
@@ -170,7 +170,7 @@ export class AgentMCPService {
     return `http://127.0.0.1:${this.server?.port ?? 0}`;
   }
 
-  registerRun(runId: string, connection: ConnectionDetails | null): string {
+  registerRun(runId: string, connection: ConnectionProfile | null): string {
     this.ensureServer();
 
     const token = randomBytes(24).toString("hex");
@@ -540,7 +540,7 @@ export class AgentMCPService {
       }
     }
 
-    const result = await this.databaseService.executeSQL(
+    const result = await this.connectorService.executeSQL(
       context.connection,
       query,
     );

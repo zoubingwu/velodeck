@@ -9,7 +9,7 @@ import {
   type AgentSQLApprovalResolveInput,
   APP_EVENTS,
   CONFIG_DIR_NAME,
-  type ConnectionDetails,
+  type ConnectionProfile,
 } from "../../shared/contracts";
 import type { EventService } from "../events";
 import {
@@ -17,7 +17,7 @@ import {
   VELODECK_MCP_BEARER_ENV,
   VELODECK_MCP_SERVER_NAME,
 } from "./agent-mcp-service";
-import type { DatabaseGatewayService } from "./database-gateway-service";
+import type { ConnectorGatewayService } from "./connector-gateway-service";
 import { logger } from "./logger-service";
 import type { SessionService } from "./session-service";
 
@@ -39,39 +39,65 @@ const CODEX_BASE_ARGS = [
 
 const DB_INDEX_SKILL_TEMPLATE = `---
 name: db-index
-description: Use generated markdown schema indexes to understand complete table structure and write accurate SQL.
+description: Use generated markdown explorer indexes to understand data entities and write accurate SQL.
 compatibility: Requires VeloDeck MCP tool velodeck_sql_execute and write access under ~/.velodeck/.agents/skills/db-index/references.
 metadata:
   owner: velodeck
-  version: "3.0"
+  version: "4.0"
 ---
 
-# VeloDeck Schema Index Skill
+# VeloDeck Explorer Index Skill
 
-Use this skill when you need full schema context before writing SQL.
+Use this skill when you need complete entity context before writing SQL.
 
 ## Primary Goal
 - Locate the correct markdown index files first.
-- Use those files to recover complete table structures (columns, PK/FK, indexes, comments).
-- Then write SQL that matches the schema exactly.
-- Prefer markdown tables/lists as the canonical format. Do not rely on JSON blobs.
+- Use those files to recover entity structure (fields, traits, comments).
+- Then write SQL that matches the structure exactly.
+- Prefer markdown tables/lists as the canonical format.
 
 ## Index Directory Layout
-- \`references/catalog.md\`: global directory of all saved connections and their index files.
-- \`references/<connection-locator>/index.md\`: directory for one connection, mapping each namespace/database to a markdown file.
-- \`references/<connection-locator>/<namespace-file>.md\`: full metadata for one namespace/database.
+- \`references/catalog.md\`: global directory of saved connections and their index files.
+- \`references/<connection-locator>/index.md\`: explorer node index + entity file map for one connection.
+- \`references/<connection-locator>/<entity-file>.md\`: full metadata for one entity.
 
 ## SQL Workflow
 1. Open \`references/catalog.md\` and locate the active connection index file.
-2. Open the connection index file and locate the target namespace/database markdown file.
-3. Read the namespace markdown file to verify table names, column types, PK/FK, and indexes.
+2. Open the connection index file and locate the target entity markdown file.
+3. Read entity markdown to verify field names/types/traits.
 4. Draft SQL based on the indexed structure.
-5. If required metadata is missing or stale, refresh it via MCP SQL introspection and update the same files under \`references/\`.
+5. If metadata is missing or stale, refresh it and update files under \`references/\`.
 
 ## Tooling
 - Use MCP tool \`velodeck_sql_execute\` for SQL execution.
 - Write SQL requires explicit user approval.
 `;
+
+function readOption(profile: ConnectionProfile, key: string): string {
+  const value = profile.options[key];
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value === undefined || value === null) {
+    return "";
+  }
+  return String(value);
+}
+
+function readBooleanOption(profile: ConnectionProfile, key: string): boolean {
+  const value = profile.options[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return ["1", "true", "yes", "on"].includes(normalized);
+  }
+  return false;
+}
 
 export class AgentService {
   private readonly runs = new Map<string, AgentRun>();
@@ -82,7 +108,7 @@ export class AgentService {
     private readonly events: EventService,
     private readonly mcpService: AgentMCPService,
     private readonly sessionService: SessionService,
-    private readonly databaseService: DatabaseGatewayService,
+    private readonly connectorService: ConnectorGatewayService,
   ) {
     this.configDir = join(homedir(), CONFIG_DIR_NAME);
     this.skillsDir = join(
@@ -195,7 +221,7 @@ export class AgentService {
 
   private async buildPromptWithContext(
     userPrompt: string,
-    activeConnection: ConnectionDetails | null,
+    activeConnection: ConnectionProfile | null,
   ): Promise<string> {
     const connectionSummary = this.describeConnection(activeConnection);
     const dbVersion = await this.resolveConnectionVersion(activeConnection);
@@ -218,14 +244,14 @@ export class AgentService {
   }
 
   private async resolveConnectionVersion(
-    activeConnection: ConnectionDetails | null,
+    activeConnection: ConnectionProfile | null,
   ): Promise<string> {
     if (!activeConnection) {
       return "";
     }
 
     try {
-      return await this.databaseService.getVersion(activeConnection);
+      return await this.connectorService.getVersion(activeConnection);
     } catch (error) {
       logger.warn(
         `failed to resolve DB version for prompt context: ${String(error)}`,
@@ -235,23 +261,32 @@ export class AgentService {
   }
 
   private describeConnection(
-    activeConnection: ConnectionDetails | null,
+    activeConnection: ConnectionProfile | null,
   ): string {
     if (!activeConnection) {
       return "none";
     }
 
-    switch (activeConnection.kind) {
-      case "mysql":
-      case "postgres":
-        return `${activeConnection.kind} ${activeConnection.user}@${activeConnection.host}:${activeConnection.port}/${activeConnection.dbName}`;
-      case "sqlite":
-        return `sqlite file=${activeConnection.filePath}`;
-      case "bigquery":
-        return `bigquery project=${activeConnection.projectId}${activeConnection.location ? ` location=${activeConnection.location}` : ""}`;
-      default:
-        return "unknown";
+    const host = readOption(activeConnection, "host");
+    const port = readOption(activeConnection, "port");
+    const user = readOption(activeConnection, "user");
+    const dbName = readOption(activeConnection, "dbName");
+    const filePath = readOption(activeConnection, "filePath");
+    const projectId = readOption(activeConnection, "projectId");
+
+    if (host || port) {
+      return `${activeConnection.kind} ${user}@${host}:${port}/${dbName}`;
     }
+
+    if (filePath) {
+      return `${activeConnection.kind} file=${filePath}`;
+    }
+
+    if (projectId) {
+      return `${activeConnection.kind} project=${projectId}`;
+    }
+
+    return activeConnection.kind;
   }
 
   private buildCodexArgs(mcpURL: string): string[] {
@@ -270,7 +305,7 @@ export class AgentService {
 
   private buildRunEnv(
     mcpToken: string,
-    activeConnection: ConnectionDetails | null,
+    activeConnection: ConnectionProfile | null,
   ): Record<string, string> {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
@@ -289,37 +324,16 @@ export class AgentService {
       return env;
     }
 
-    switch (activeConnection.kind) {
-      case "mysql":
-      case "postgres":
-        env.VELODECK_ACTIVE_DB_HOST = activeConnection.host;
-        env.VELODECK_ACTIVE_DB_PORT = activeConnection.port;
-        env.VELODECK_ACTIVE_DB_USER = activeConnection.user;
-        env.VELODECK_ACTIVE_DB_NAME = activeConnection.dbName;
-        env.VELODECK_ACTIVE_DB_TLS = activeConnection.useTLS ? "1" : "0";
-        break;
-      case "sqlite":
-        env.VELODECK_ACTIVE_DB_HOST = "";
-        env.VELODECK_ACTIVE_DB_PORT = "";
-        env.VELODECK_ACTIVE_DB_USER = "";
-        env.VELODECK_ACTIVE_DB_NAME = activeConnection.filePath;
-        env.VELODECK_ACTIVE_DB_TLS = "0";
-        break;
-      case "bigquery":
-        env.VELODECK_ACTIVE_DB_HOST = "bigquery.googleapis.com";
-        env.VELODECK_ACTIVE_DB_PORT = "443";
-        env.VELODECK_ACTIVE_DB_USER = "";
-        env.VELODECK_ACTIVE_DB_NAME = activeConnection.projectId;
-        env.VELODECK_ACTIVE_DB_TLS = "1";
-        break;
-      default:
-        env.VELODECK_ACTIVE_DB_HOST = "";
-        env.VELODECK_ACTIVE_DB_PORT = "";
-        env.VELODECK_ACTIVE_DB_USER = "";
-        env.VELODECK_ACTIVE_DB_NAME = "";
-        env.VELODECK_ACTIVE_DB_TLS = "0";
-        break;
-    }
+    env.VELODECK_ACTIVE_DB_HOST = readOption(activeConnection, "host");
+    env.VELODECK_ACTIVE_DB_PORT = readOption(activeConnection, "port");
+    env.VELODECK_ACTIVE_DB_USER = readOption(activeConnection, "user");
+    env.VELODECK_ACTIVE_DB_NAME =
+      readOption(activeConnection, "dbName") ||
+      readOption(activeConnection, "filePath") ||
+      readOption(activeConnection, "projectId");
+    env.VELODECK_ACTIVE_DB_TLS = readBooleanOption(activeConnection, "useTLS")
+      ? "1"
+      : "0";
 
     return env;
   }
