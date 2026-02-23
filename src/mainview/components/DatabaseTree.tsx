@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export type DatabaseTreeItem = {
   name: string;
+  displayName?: string;
   tables: string[];
   isLoadingTables?: boolean;
 };
@@ -30,6 +31,8 @@ export const DatabaseTree = memo(
     onSelectTable,
     selectedTable,
   }: DatabaseTreeProps) => {
+    const defaultExpandedItems = databaseTree.map((dbItem) => dbItem.name);
+
     return (
       <ScrollArea className="h-full bg-muted/50">
         {isLoadingDatabases ? (
@@ -44,11 +47,15 @@ export const DatabaseTree = memo(
             Error loading Databases: {databasesError.message}
           </div>
         ) : (
-          <Tree className="p-2">
+          <Tree
+            key={defaultExpandedItems.join("|")}
+            className="p-2"
+            initialExpandedItems={defaultExpandedItems}
+          >
             {databaseTree.map((dbItem) => (
               <Folder
                 key={dbItem.name}
-                element={dbItem.name}
+                element={dbItem.displayName || dbItem.name}
                 value={dbItem.name}
                 onExpand={onSelectDatabase}
               >

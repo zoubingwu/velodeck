@@ -90,6 +90,30 @@ function databaseKindLabel(kind?: ConnectionDetails["kind"]): string {
   }
 }
 
+function fileNameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || "";
+}
+
+function defaultNamespaceDisplayName(
+  connectionDetails: ConnectionDetails | null,
+  namespaceName: string,
+): string {
+  if (connectionDetails?.kind === "sqlite" && namespaceName === "main") {
+    const fileName = fileNameFromPath(connectionDetails.filePath || "");
+    if (fileName) {
+      return fileName;
+    }
+  }
+
+  return namespaceName;
+}
+
 const MainDataView = ({
   onClose,
   connectionDetails,
@@ -136,6 +160,7 @@ const MainDataView = ({
     (
       entries: {
         namespaceName: string;
+        namespaceDisplayName?: string;
         tables?: string[];
         isLoadingTables?: boolean;
       }[],
@@ -146,6 +171,9 @@ const MainDataView = ({
             (item) => item.name === entry.namespaceName,
           );
           if (existing) {
+            if (entry.namespaceDisplayName) {
+              existing.displayName = entry.namespaceDisplayName;
+            }
             if (entry.tables) {
               existing.tables = entry.tables;
             }
@@ -155,6 +183,12 @@ const MainDataView = ({
 
           draft.push({
             name: entry.namespaceName,
+            displayName:
+              entry.namespaceDisplayName ||
+              defaultNamespaceDisplayName(
+                connectionDetails,
+                entry.namespaceName,
+              ),
             tables: entry.tables || [],
             isLoadingTables: entry.isLoadingTables ?? false,
           });
@@ -169,7 +203,9 @@ const MainDataView = ({
           if (!isASystemDb && isBSystemDb) {
             return 1;
           }
-          return a.name.localeCompare(b.name);
+          const aLabel = a.displayName || a.name;
+          const bLabel = b.displayName || b.name;
+          return aLabel.localeCompare(bLabel);
         });
       });
     },
@@ -229,23 +265,30 @@ const MainDataView = ({
       return;
     }
 
-    const visibleNamespaces = namespaces
-      .map((item) => item.namespaceName)
-      .filter((name) =>
-        connectionDetails?.kind === "mysql" && !SHOW_SYSTEM_DATABASES
-          ? !isSystemDatabase(name)
-          : true,
-      );
+    const visibleNamespaces = namespaces.filter((item) =>
+      connectionDetails?.kind === "mysql" && !SHOW_SYSTEM_DATABASES
+        ? !isSystemDatabase(item.namespaceName)
+        : true,
+    );
 
     mergeDatabaseTree(
-      visibleNamespaces.map((namespaceName) => ({ namespaceName })),
+      visibleNamespaces.map((item) => ({
+        namespaceName: item.namespaceName,
+        namespaceDisplayName:
+          item.displayName ||
+          defaultNamespaceDisplayName(connectionDetails, item.namespaceName),
+      })),
+    );
+
+    const visibleNamespaceNames = visibleNamespaces.map(
+      (item) => item.namespaceName,
     );
 
     const checkMetadataAndTriggerIndexer = async () => {
       try {
         const metadata = await api.metadata.getDatabaseMetadata();
         const existing = Object.keys(metadata?.namespaces || {});
-        const missing = visibleNamespaces.filter(
+        const missing = visibleNamespaceNames.filter(
           (name) => !existing.includes(name),
         );
         if (missing.length > 0) {

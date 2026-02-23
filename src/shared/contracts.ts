@@ -103,6 +103,7 @@ export interface AdapterCapabilities {
 export interface NamespaceRef {
   namespaceName: string;
   namespaceKind: NamespaceKind;
+  displayName?: string;
 }
 
 export interface TableRef {

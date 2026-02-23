@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { basename } from "node:path";
 import type {
   Column,
   ColumnSchema,
@@ -43,6 +44,16 @@ function quoteSQLiteStringLiteral(input: string): string {
 function namespaceSelector(namespaceName: string): string {
   const name = namespaceName || "main";
   return quoteDoubleQuoteIdentifier(name);
+}
+
+function namespaceDisplayName(namespaceName: string, filePath: string): string {
+  const normalizedPath = filePath.replace(/\\/g, "/").trim();
+  if (!normalizedPath) {
+    return namespaceName;
+  }
+
+  const fileName = basename(normalizedPath);
+  return fileName || namespaceName;
 }
 
 function tableInfoSQL(namespaceName: string, tableName: string): string {
@@ -195,9 +206,11 @@ export class SQLiteAdapter implements DatabaseAdapter {
       return rows
         .map((row) => {
           const namespaceName = typeof row.name === "string" ? row.name : "";
+          const filePath = typeof row.file === "string" ? row.file : "";
           return {
             namespaceName,
             namespaceKind: this.capabilities.namespaceKind,
+            displayName: namespaceDisplayName(namespaceName, filePath),
           };
         })
         .filter((item) => item.namespaceName.length > 0);
